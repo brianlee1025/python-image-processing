@@ -1,0 +1,12 @@
+SQLAlchemy
+aiosqlite
+alembic
+asyncpg
+celery
+fastapi
+psycopg2-binary
+pydantic~=2.0
+pydantic-settings
+redis
+typer
+uvicorn[standard]

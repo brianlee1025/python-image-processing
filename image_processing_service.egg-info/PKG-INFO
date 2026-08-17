@@ -1,0 +1,55 @@
+Metadata-Version: 2.4
+Name: image_processing_service
+Version: 0.0.0.dev0
+Summary: imag eprocessign service using python
+Author: brianlee
+License: Copyright (c) 2026, brianlee, All Rights Reserved
+        
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+License-File: LICENSE
+Requires-Dist: SQLAlchemy
+Requires-Dist: aiosqlite
+Requires-Dist: alembic
+Requires-Dist: asyncpg
+Requires-Dist: celery
+Requires-Dist: fastapi
+Requires-Dist: psycopg2-binary
+Requires-Dist: pydantic~=2.0
+Requires-Dist: pydantic-settings
+Requires-Dist: redis
+Requires-Dist: typer
+Requires-Dist: uvicorn[standard]
+Dynamic: license-file
+
+# image-processing-service
+
+imag eprocessign service using python
+
+## CLI
+
+```bash
+image_processing_service --help
+```
+
+## Developer Documentation
+
+Comprehensive developer documentation is available in [`docs/dev/`](./docs/dev/) covering testing, configuration, deployment, and all project features.
+
+### Quick Start for Developers
+
+```bash
+# Install development environment
+make install
+
+# Start services with Docker
+docker compose up -d
+
+# Run tests
+make tests
+
+# Auto-fix formatting
+make chores
+```
+
+See the [developer documentation](./docs/dev/README.md) for complete guides and reference.
