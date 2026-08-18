@@ -1,0 +1,15 @@
+# Local environment
+.venv/
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local databases and scratch renders
+test.db*
+migrate.db
+sample-card.png

@@ -47,6 +47,44 @@ services:
       - db
       - redis
 
+  # Consumes share card requests from playbook-be and replies with the rendered
+  # card. Scale it with `docker compose up --scale render-worker=3`: the
+  # workers share one consumer group, so partitions split between them.
+  #
+  # There is no broker here on purpose. Kafka belongs to playbook-be's local
+  # stack (`docker compose -f playbook-be/src/main/resources/docker-compose.yml
+  # up -d`), and this container reaches it through the host. For day to day
+  # work you do not need this service at all: run the worker straight from the
+  # checkout instead, see docs/dev/share_cards.md.
+  render-worker:
+    build:
+      dockerfile: ./dockerfile.worker
+    volumes:
+      - "./image_processing_service:/app/image_processing_service"
+    # On playbook-local's network, using the broker's *internal* listener.
+    # host.docker.internal cannot work: Redpanda advertises `localhost:9092` to
+    # external clients, and after bootstrap the client follows that address,
+    # which inside a container points at the container itself.
+    networks:
+      - playbook-local
+    # Long enough for the drain: finish in-flight cards, flush the producer,
+    # commit. A SIGKILL mid-drain just means those requests are replayed.
+    stop_grace_period: 30s
+    environment:
+      IS_DEV: true
+      KAFKA_BROKERS: redpanda:29092
+      KAFKA_REQUEST_TOPIC: image-render-requests
+      KAFKA_RESULT_TOPIC: image-render-results
+      KAFKA_GROUP_ID: image-render-workers
+      RENDER_WORKERS: 4
+      RENDER_QUEUE_SIZE: 32
+      # playbook-be sends presigned MinIO/S3 links for avatars and covers, so
+      # remote fetching is on with only the storage hosts allow listed.
+      RENDER_ALLOW_REMOTE_IMAGES: "true"
+      RENDER_REMOTE_IMAGE_HOSTS: '["minio", "localhost", "host.docker.internal"]'
+      RENDER_REMOTE_REQUIRE_HTTPS: "false"
+      RENDER_ALLOW_PRIVATE_REMOTE_HOSTS: "true"
+
   redis:
     image: redis
 
@@ -57,3 +95,10 @@ services:
       POSTGRES_PASSWORD: main12345
       POSTGRES_USER: main
       POSTGRES_DB: main
+
+networks:
+  # Created by playbook-be's local stack, which owns the broker. Start that
+  # first, or `docker compose up render-worker` has nothing to attach to.
+  playbook-local:
+    external: true
+    name: playbook-local_default

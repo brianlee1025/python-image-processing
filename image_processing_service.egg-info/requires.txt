@@ -3,10 +3,13 @@ aiosqlite
 alembic
 asyncpg
 celery
+confluent-kafka
 fastapi
+pillow>=11.0
 psycopg2-binary
 pydantic~=2.0
 pydantic-settings
+qrcode
 redis
 typer
 uvicorn[standard]

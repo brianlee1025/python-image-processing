@@ -11,7 +11,8 @@ def test_app_exists():
 
 def test_static_files_mounted():
     """Test that static files are properly mounted."""
-    routes = [route.path for route in app.routes]
+    # Included routers appear in app.routes without a path of their own.
+    routes = [getattr(route, "path", "") for route in app.routes]
     assert "/static" in routes or any("/static" in route for route in routes)
 
 
@@ -48,7 +49,7 @@ def test_openapi_schema(fastapi_client):
 
 def test_static_route_exists():
     """Test that static route is configured."""
-    routes = {route.path: route for route in app.routes}
+    routes = {getattr(route, "path", ""): route for route in app.routes}
     # Static files might be mounted at /static or have a prefix
     has_static = any("/static" in path for path in routes)
     assert has_static, "Static files route should be configured"
@@ -72,3 +73,11 @@ def test_health_check(fastapi_client):
     response = fastapi_client.get("/health")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+def test_readiness_reports_render_capacity(fastapi_client):
+    response = fastapi_client.get("/ready")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["capacity"] >= 1

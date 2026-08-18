@@ -1,5 +1,8 @@
 """Tests for settings configuration."""
 
+import pytest
+from pydantic import ValidationError
+
 from image_processing_service.conf.settings import Settings
 from image_processing_service.settings import settings
 
@@ -75,3 +78,10 @@ def test_settings_validates_types():
     # This is implicitly tested by pydantic, but we verify it works
     test_settings = Settings()
     assert isinstance(test_settings.debug, bool)
+
+
+def test_settings_reject_unsafe_worker_values(monkeypatch):
+    monkeypatch.setenv("RENDER_WORKERS", "0")
+
+    with pytest.raises(ValidationError):
+        Settings()

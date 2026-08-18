@@ -1,0 +1,23 @@
+# Local settings must never be baked into an image: deployed environments pass
+# real environment variables, and a stale .env in the layer would be a
+# confusing fallback (and would carry localhost addresses into prod).
+.env
+
+# Build context bloat. The venv alone is hundreds of megabytes.
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.git/
+.idea/
+
+# Not needed at runtime
+docs/
+tests/
+*.md
+!README.md
+test.db*
+migrate.db
+sample-card.png

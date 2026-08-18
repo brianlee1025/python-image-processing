@@ -59,11 +59,4 @@ def test_periodic_task_setup_exists():
 
 def test_periodic_tasks_can_be_configured():
     """Test that periodic tasks configuration doesn't raise errors."""
-    # This is a basic smoke test - in a real scenario you'd need a running worker
-    # to test actual periodic task execution
-    try:
-        # Just verify the celery app is properly configured for periodic tasks
-        assert celery.conf.beat_schedule is not None or True
-    except AttributeError:
-        # beat_schedule might not be set if not configured
-        pass
+    assert hasattr(celery.conf, "beat_schedule")

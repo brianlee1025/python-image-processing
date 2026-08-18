@@ -13,6 +13,11 @@ New to this project? Start here:
 
 ## Core Features
 
+### [Share Cards](./share_cards.md)
+
+The main job of this service: Kafka contract with playbook-be, the Pillow card
+renderer, and the bounded worker pool that keeps it from being overloaded.
+
 ### [Database](./database.md)
 
 SQLAlchemy ORM integration, models, migrations with Alembic, and database patterns.
