@@ -109,8 +109,25 @@ def panel(draw: ImageDraw.ImageDraw, box: Box, radius: int, fill: RGBA, outline:
     draw.rounded_rectangle(box, radius=radius, fill=fill, outline=outline, width=2 if outline else 0)
 
 
+def draw_text(
+    draw: ImageDraw.ImageDraw,
+    origin: tuple[float, float],
+    text: str,
+    typeface: Typeface,
+    fill: RGB | RGBA,
+    **kwargs: object,
+) -> None:
+    """Every string on a card goes through here.
+
+    `Typeface.safe` swaps out whatever the loaded face cannot draw, so this and
+    `text_width` are the pair that keeps measurement and drawing looking at the
+    same string. Call `draw.text` directly and a card can pick up a tofu box.
+    """
+    draw.text(origin, typeface.safe(text), font=typeface.font, fill=fill, **kwargs)  # type: ignore[arg-type]
+
+
 def text_width(draw: ImageDraw.ImageDraw, text: str, typeface: Typeface) -> float:
-    return draw.textlength(text, font=typeface.font)
+    return draw.textlength(typeface.safe(text), font=typeface.font)
 
 
 def tracked_width(draw: ImageDraw.ImageDraw, text: str, typeface: Typeface, tracking: float) -> float:
@@ -133,6 +150,7 @@ def tracked_text(
     the x coordinate after the last glyph.
     """
     x, y = origin
+    text = typeface.safe(text)
     for character in text:
         draw.text((x, y), character, font=typeface.font, fill=fill)
         x += draw.textlength(character, font=typeface.font) + tracking
@@ -227,7 +245,7 @@ def draw_lines(
         if align != "left" and max_width:
             slack = max_width - text_width(draw, line, typeface)
             offset = slack / 2 if align == "center" else slack
-        draw.text((x + offset, y), line, font=typeface.font, fill=fill)
+        draw_text(draw, (x + offset, y), line, typeface, fill)
         y += step
 
     return y
@@ -319,7 +337,7 @@ def icon_row(
             icon_top = y + (typeface.line_height - icon_size) / 2
             draw_icon(draw, icon, (x, icon_top, x + icon_size, icon_top + icon_size), icon_fill or fill)
             x += icon_size + gap
-        draw.text((x, y), label, font=typeface.font, fill=fill)
+        draw_text(draw, (x, y), label, typeface, fill)
         x += text_width(draw, label, typeface)
     return x
 
@@ -348,11 +366,12 @@ def initials_avatar(text: str, size: int, theme: Theme) -> Image.Image:
     draw = ImageDraw.Draw(circle, "RGBA")
     typeface = get_font(round(size * 0.40), "bold")
     label_width = text_width(draw, initials, typeface)
-    draw.text(
+    draw_text(
+        draw,
         (size / 2 - label_width / 2, size / 2 - typeface.line_height * 0.56),
         initials,
-        font=typeface.font,
-        fill=readable_text(theme.accent),
+        typeface,
+        readable_text(theme.accent),
     )
     return circle
 
@@ -419,11 +438,12 @@ def avatar_stack(
         typeface = get_font(round(size * 0.34), "bold")
         label = f"+{overflow}"
         label_width = text_width(draw, label, typeface)
-        draw.text(
+        draw_text(
+            draw,
             (left + size / 2 - label_width / 2, y + size / 2 - typeface.line_height * 0.54),
             label,
-            font=typeface.font,
-            fill=theme.text,
+            typeface,
+            theme.text,
         )
         drawn += 1
 

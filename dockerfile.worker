@@ -9,6 +9,14 @@ ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     WORKER_HEARTBEAT_FILE=/tmp/image-worker-heartbeat
 
+# Cards are drawn, not laid out in a browser, so the face on disk is the face
+# on the card. Without this the slim image has no fonts at all and Pillow falls
+# back to its bundled 113 glyph face: no en dash, no accented latin, tofu boxes
+# wherever a name or a time range needs either.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
+
 RUN pip install --no-cache-dir "uv==${UV_VERSION}" \
     && groupadd --system --gid 10001 app \
     && useradd --system --uid 10001 --gid app --home-dir /nonexistent --shell /usr/sbin/nologin app

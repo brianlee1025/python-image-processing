@@ -32,6 +32,7 @@ from .canvas import (
     cover_wash,
     divider,
     draw_lines,
+    draw_text,
     ellipsize,
     fit_text,
     hero_cover,
@@ -369,7 +370,7 @@ def _compose_user(
     if status:
         dot_radius = max(metrics.icon * 0.22, 4)
         status_dot(draw, (column_x + dot_radius * 1.9, cursor + meta_face.line_height * 0.55), dot_radius, theme.accent)
-        draw.text((column_x + dot_radius * 4.4, cursor), status, font=meta_face.font, fill=theme.muted)
+        draw_text(draw, (column_x + dot_radius * 4.4, cursor), status, meta_face, theme.muted)
         cursor += meta_face.line_height
 
     cursor = max(cursor, avatar_top + avatar_size) + metrics.gap
@@ -467,16 +468,16 @@ def _compose_event(
     host_bold = get_font(metrics.subtitle, "bold")
     if card.host_name and cursor + host_face.line_height <= limit:
         x = float(column_x)
-        draw.text((x, cursor), "Hosted by ", font=host_face.font, fill=theme.muted)
+        draw_text(draw, (x, cursor), "Hosted by ", host_face, theme.muted)
         x += text_width(draw, "Hosted by ", host_face)
-        draw.text((x, cursor), card.host_name, font=host_bold.font, fill=theme.accent)
+        draw_text(draw, (x, cursor), card.host_name, host_bold, theme.accent)
         cursor += host_face.line_height
 
     if squad_name and squad_name != card.host_name and cursor + host_face.line_height <= limit:
         x = float(column_x)
-        draw.text((x, cursor), "for ", font=host_face.font, fill=theme.muted)
+        draw_text(draw, (x, cursor), "for ", host_face, theme.muted)
         x += text_width(draw, "for ", host_face)
-        draw.text((x, cursor), squad_name.upper(), font=host_bold.font, fill=theme.accent)
+        draw_text(draw, (x, cursor), squad_name.upper(), host_bold, theme.accent)
 
 
 # --------------------------------------------------------------------------
@@ -589,11 +590,12 @@ def _draw_scan_column(
 
     url = _display_url(card.share_url) or settings.render_brand_url
     if not card.share_url:
-        draw.text(
+        draw_text(
+            draw,
             (center_x - text_width(draw, url, url_face) / 2, (top + bottom) / 2),
             url,
-            font=url_face.font,
-            fill=theme.accent,
+            url_face,
+            theme.accent,
         )
         return
 
@@ -623,11 +625,12 @@ def _draw_scan_column(
         padding=padding,
         radius=metrics.panel_radius // 2,
     )
-    draw.text(
+    draw_text(
+        draw,
         (center_x - text_width(draw, url, url_face) / 2, cursor + metrics.gap // 2),
         url,
-        font=url_face.font,
-        fill=theme.accent,
+        url_face,
+        theme.accent,
     )
 
 
@@ -738,11 +741,12 @@ def _draw_bottom_block(
 
     url = _display_url(card.share_url) or settings.render_brand_url
     url_bottom = bottom - action_height - (metrics.gap // 2 if action_entries else 0)
-    draw.text(
+    draw_text(
+        draw,
         (center - text_width(draw, url, url_face) / 2, url_bottom - url_face.line_height),
         url,
-        font=url_face.font,
-        fill=theme.accent,
+        url_face,
+        theme.accent,
     )
 
     top = url_bottom - url_face.line_height - metrics.gap // 2
@@ -770,11 +774,12 @@ def _draw_bottom_block(
     if footer_note:
         note_face = get_font(metrics.micro, "regular")
         top -= note_face.line_height + metrics.gap // 3
-        draw.text(
+        draw_text(
+            draw,
             (center - text_width(draw, footer_note, note_face) / 2, top),
             footer_note,
-            font=note_face.font,
-            fill=theme.muted,
+            note_face,
+            theme.muted,
         )
 
     return top
@@ -932,15 +937,13 @@ def _draw_stat_cell(
                 ),
                 theme.accent,
             )
-            draw.text(
-                (icon_left + icon_size + metrics.gap // 3, value_top), value, font=value_face.font, fill=theme.text
-            )
+            draw_text(draw, (icon_left + icon_size + metrics.gap // 3, value_top), value, value_face, theme.text)
             _draw_caption(
                 draw, center_x, value_top + value_face.line_height, caption, caption_width, label_face, theme, metrics
             )
             return
 
-    draw.text((center_x - value_width / 2, value_top), value, font=value_face.font, fill=theme.text)
+    draw_text(draw, (center_x - value_width / 2, value_top), value, value_face, theme.text)
     _draw_caption(
         draw, center_x, value_top + value_face.line_height, caption, caption_width, label_face, theme, metrics
     )
@@ -1000,11 +1003,12 @@ def _draw_event_details(
                 theme.accent,
             )
             for line_index, line in enumerate(lines[:2]):
-                draw.text(
+                draw_text(
+                    draw,
                     (text_left, top + line_index * face.line_height),
                     ellipsize(draw, line, face, available),
-                    font=face.font,
-                    fill=theme.text if line_index == 0 else theme.muted,
+                    face,
+                    theme.text if line_index == 0 else theme.muted,
                 )
             top += row_step + face.line_height * (min(len(lines), 2) - 1)
 

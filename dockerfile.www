@@ -5,7 +5,11 @@ ENV APP_MODULE=image_processing_service.www:app
 
 # Install uv for fast package installation
 RUN pip install --no-cache-dir uv
-RUN apt-get update && apt-get install -y netcat-traditional && rm -rf /var/lib/apt/lists/*
+# fonts-dejavu-core: the renderer draws text with Pillow, and a slim image
+# carries no fonts, which leaves every card in the 113 glyph fallback face.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends netcat-traditional fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 
 # Configure UV to compile bytecode and skip dev dependencies
 ENV UV_COMPILE_BYTECODE=1
