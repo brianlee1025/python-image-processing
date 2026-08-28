@@ -6,7 +6,7 @@ field a card draws appears here at least once.
 
 from datetime import datetime, timedelta, timezone
 
-from .schemas.cards import CardKind, CardLayout, EventCard, RenderRequest, SquadCard, Stat, UserCard
+from .schemas.cards import CardKind, CardLayout, EventCard, PostCard, RenderRequest, SquadCard, Stat, UserCard
 
 SAMPLE_USER = UserCard(
     title="Aisyah Rahman",
@@ -71,7 +71,26 @@ SAMPLE_EVENT = EventCard(
     ],
 )
 
-SAMPLES = {"USER": SAMPLE_USER, "SQUAD": SAMPLE_SQUAD, "EVENT": SAMPLE_EVENT}
+SAMPLE_POST = PostCard(
+    title="Aisyah Rahman",
+    description=(
+        "New post features are live! Playbook posts now automatically highlight "
+        "dates, fees and squad tags, so a caption like 'Join us on 01/09/2026 - "
+        "entry fee is RM25' reads clearly at a glance."
+    ),
+    share_url="https://playbookapp.org/p/qm4dz1x",
+    handle="@aisyahplays",
+    verified=True,
+    level=12,
+    posted_at=datetime.now(timezone.utc) - timedelta(hours=2),
+    squad_name="Bukit Jalil Ballers",
+    stats=[
+        Stat(label="Likes", value="128"),
+        Stat(label="Comments", value="24"),
+    ],
+)
+
+SAMPLES = {"USER": SAMPLE_USER, "SQUAD": SAMPLE_SQUAD, "EVENT": SAMPLE_EVENT, "POST": SAMPLE_POST}
 
 
 def sample_request(kind: CardKind = "USER", layout: CardLayout = "POSTER", theme: str | None = None) -> RenderRequest:

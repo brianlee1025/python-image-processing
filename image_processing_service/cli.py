@@ -46,7 +46,7 @@ def render_worker() -> None:
 
 @app.command(help="Render a demo card to a file, e.g. for checking a theme or a font change.")
 def sample_card(
-    kind: Annotated[str, typer.Option(help="USER, SQUAD or EVENT.")] = "USER",
+    kind: Annotated[str, typer.Option(help="USER, SQUAD, EVENT or POST.")] = "USER",
     layout: Annotated[str, typer.Option(help="POSTER (1080x1350), STORY (1080x1920) or CARD (1200x630).")] = "POSTER",
     theme: Annotated[str | None, typer.Option(help="midnight, turf, sunset, court or ocean.")] = None,
     out: Annotated[Path, typer.Option(help="Where to write the image.")] = Path("sample-card.png"),

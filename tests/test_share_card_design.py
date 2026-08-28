@@ -18,6 +18,7 @@ from image_processing_service.render.cards import (
     _user_stats,
     format_event_day,
     format_event_time,
+    format_post_date,
     render_card,
 )
 from image_processing_service.render.covers import default_cover
@@ -97,6 +98,27 @@ def test_a_supplied_banner_wins_over_the_generated_one():
     assert band_colors(generated) != band_colors(supplied)
 
 
+def test_a_post_without_a_photo_gets_no_generated_band():
+    """Most posts are just words. A squad or event without art gets a stand
+    in band; a text only post should not - there is nothing to stand in for."""
+    metrics = METRICS_BY_LAYOUT["POSTER"]
+    strip = (metrics.frame + 40, metrics.frame + 4, 1080 - metrics.frame - 40, metrics.frame + 40)
+
+    post = variety(render_card(request_for("POST", title="Aisyah Rahman", description="Great session today.")), strip)
+    squad = variety(render_card(request_for("SQUAD")), strip)
+
+    assert post * 3 < squad
+
+
+def test_a_posts_supplied_photo_still_renders_as_a_band():
+    plain = render_card(request_for("POST", title="Aisyah Rahman", description="Great session today."))
+    with_photo = render_card(
+        request_for("POST", title="Aisyah Rahman", description="Great session today.", coverBase64=photo())
+    )
+
+    assert band_colors(plain) != band_colors(with_photo)
+
+
 def test_bundled_cover_files_are_preferred_over_generated_art(tmp_path, monkeypatch):
     flat = Image.new("RGB", (600, 300), (7, 9, 11))
     flat.save(tmp_path / "squad.png")
@@ -126,7 +148,7 @@ def test_generated_covers_are_cached_per_theme_and_sport():
     assert first is not second
 
 
-@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT"])
+@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT", "POST"])
 def test_the_qr_code_is_drawn_on_white_whatever_the_theme(kind):
     """A dark QR on a dark card is the one thing a phone will not read."""
     assert white_pixels(render_card(sample_request(kind=kind))) > 20_000
@@ -178,7 +200,7 @@ def test_the_call_to_action_and_actions_can_be_overridden():
     assert default.tobytes() != custom.tobytes()
 
 
-@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT"])
+@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT", "POST"])
 def test_no_affordance_row_unless_the_payload_asks_for_one(kind):
     """On a flat image, "Add to calendar" is a caption for a control that is not
     there. The card ends on its link unless a caller says otherwise.
@@ -200,6 +222,80 @@ def test_a_verified_player_gets_a_tick():
     verified = render_card(request_for("USER", title="Admin Lee", handle="@adminnn", verified=True))
 
     assert plain.tobytes() != verified.tobytes()
+
+
+def test_a_verified_poster_gets_a_tick():
+    plain = render_card(request_for("POST", title="Admin Lee", handle="@adminnn", description="Hello!"))
+    verified = render_card(
+        request_for("POST", title="Admin Lee", handle="@adminnn", description="Hello!", verified=True)
+    )
+
+    assert plain.tobytes() != verified.tobytes()
+
+
+def test_a_posts_like_and_comment_counts_render():
+    without = render_card(request_for("POST", title="Admin Lee", description="Hello!"))
+    with_stats = render_card(
+        request_for(
+            "POST",
+            title="Admin Lee",
+            description="Hello!",
+            stats=[{"label": "Likes", "value": "56"}, {"label": "Comments", "value": "3"}],
+        )
+    )
+
+    assert without.tobytes() != with_stats.tobytes()
+
+
+def test_a_post_with_only_a_photo_and_no_caption_still_renders():
+    """A post can be a photo with nothing typed. The renderer should not
+    assume `description` is there just because every other field might be."""
+    image = render_card(request_for("POST", title="Admin Lee", coverBase64=photo()))
+    assert image.size == (1080, 1350)
+
+
+def test_a_content_image_replaces_the_drawn_body():
+    """A screenshot of the post reproduces things this renderer cannot -
+    highlighted dates, emoji, a photo grid - so it wins over drawing the
+    title/description/stats from scratch when both are sent."""
+    drawn = render_card(
+        request_for(
+            "POST",
+            title="Admin Lee",
+            handle="@adminnn",
+            description="Great session today!",
+            stats=[{"label": "Likes", "value": "12"}],
+        )
+    )
+    screenshot = render_card(
+        request_for(
+            "POST",
+            title="Admin Lee",
+            handle="@adminnn",
+            description="Great session today!",
+            stats=[{"label": "Likes", "value": "12"}],
+            contentImageBase64=photo((900, 500), (250, 250, 255)),
+        )
+    )
+
+    assert drawn.tobytes() != screenshot.tobytes()
+
+
+@pytest.mark.parametrize("shape", [(900, 400), (400, 1200), (300, 300)])
+def test_a_content_image_of_any_shape_stays_inside_the_card(shape):
+    """Letterboxed, not cropped or stretched: a caption cut in half or a
+    squashed photo would misrepresent the post."""
+    metrics = METRICS_BY_LAYOUT["POSTER"]
+    image = render_card(request_for("POST", title="Admin Lee", contentImageBase64=photo(shape, (250, 250, 255))))
+
+    for x in (metrics.frame + 4, image.width - metrics.frame - 4):
+        for y in (metrics.frame + 4, image.height - metrics.frame - 4):
+            assert image.getpixel((x, y)) != (250, 250, 255)
+
+
+def test_an_unusable_content_image_still_renders_a_card():
+    image = render_card(request_for("POST", title="Admin Lee", contentImageBase64="not-an-image"))
+    assert image.size == (1080, 1350)
 
 
 def test_the_level_badge_is_coloured_by_tier():
@@ -276,7 +372,7 @@ def test_a_long_venue_is_clipped_instead_of_running_off_the_card():
 
 @pytest.mark.parametrize("layout", ["POSTER", "STORY", "CARD"])
 def test_every_layout_draws_every_kind(layout):
-    for kind in ("USER", "SQUAD", "EVENT"):
+    for kind in ("USER", "SQUAD", "EVENT", "POST"):
         image = render_card(sample_request(kind=kind, layout=layout))
         assert variety(image, (0, 0, image.width, image.height)) > 100
 
@@ -304,7 +400,20 @@ def test_icons_cover_the_sports_and_stat_labels_the_backend_sends():
     for sport in ("Football", "Futsal", "Badminton", "Running", "Cycling", "Swimming", "Yoga", "Basketball"):
         assert sport_icon(sport) in ICON_NAMES
 
-    for label in ("Members", "Going", "Spots", "Duration", "Price", "Level", "Squads", "Founded", "Captain"):
+    for label in (
+        "Members",
+        "Going",
+        "Spots",
+        "Duration",
+        "Price",
+        "Level",
+        "Squads",
+        "Founded",
+        "Captain",
+        "Likes",
+        "Comments",
+        "Shares",
+    ):
         assert stat_icon(label) in ICON_NAMES
 
 
@@ -314,7 +423,7 @@ def test_an_unknown_sport_still_gets_a_pictogram():
 
 
 def test_chip_text_keeps_its_contrast_on_every_accent():
-    for kind in ("USER", "SQUAD", "EVENT"):
+    for kind in ("USER", "SQUAD", "EVENT", "POST"):
         accent = resolve_theme(None, kind).accent
         assert contrast_ratio(readable_text(accent), accent) >= 3.0
 
@@ -346,3 +455,15 @@ def test_event_times_are_drawn_in_the_offset_they_arrive_in():
 
     assert format_event_day(starts) == "Thu, 20 Aug 2026"
     assert format_event_time(starts, request.payload.ends_at) == "7:30 PM – 9:00 PM"
+
+
+def test_post_dates_are_printed_as_an_absolute_time_not_a_relative_one():
+    """A share card is a static image; "2h ago" would go stale the moment
+    someone looks at it the next day."""
+    request = RenderRequest.model_validate(
+        {"kind": "POST", "payload": {"title": "Aisyah", "postedAt": "2026-08-20T19:05:00+08:00"}}
+    )
+    posted_at = request.payload.posted_at
+    assert posted_at is not None
+
+    assert format_post_date(posted_at) == "20 Aug · 7:05 PM"

@@ -59,7 +59,7 @@ request can override where its own answer goes with `replyTopic`.
 | Field       | Required | Notes                                                                    |
 | ----------- | -------- | ------------------------------------------------------------------------ |
 | `requestId` | no       | Defaults to a UUID. Use your own: it is the key you match the reply on.   |
-| `kind`      | yes      | `USER`, `SQUAD` or `EVENT`. Decides which payload fields are read.        |
+| `kind`      | yes      | `USER`, `SQUAD`, `EVENT` or `POST`. Decides which payload fields are read.|
 | `layout`    | no       | `POSTER` 1080x1350 (default), `STORY` 1080x1920, `CARD` 1200x630.         |
 | `format`    | no       | `AUTO` (default), `PNG`, `JPEG`, `WEBP`. See [Size budget](#size-budget). |
 | `theme`     | no       | `midnight`, `turf`, `sunset`, `court`, `ocean`. Unknown names fall back.  |
@@ -78,6 +78,7 @@ Shared by every kind: `title` (required), `subtitle`, `description`,
 | `USER`  | `handle`, `level`, `sports[]`, `verified`, `statusLabel`                                                                   |
 | `SQUAD` | `sport`, `memberCount`, `privacy`, `language`, `foundedYear`, `captainName`, `memberAvatarsBase64[]`, `memberAvatarUrls[]` |
 | `EVENT` | `sport`, `startsAt`, `endsAt`, `venue`, `hostName`, `squadName`, `spotsLeft`, `priceLabel`, `formatLabel`, `audienceLabel` |
+| `POST`  | `handle`, `verified`, `level`, `postedAt`, `squadName`, `contentImageBase64`, `contentImageUrl`                           |
 
 Notes:
 
@@ -96,6 +97,26 @@ Notes:
   dropped when the badge is drawn rather than printing the number twice.
 - `verified` draws the tick beside the display name. It is the identity check,
   not email verification: playbook-be sends `user.isIdentityVerified()`.
+- `POST` reuses `title` for the author's display name and `description` for the
+  post's own text - the words are the hero, the author is a byline. `stats`
+  carries likes/comments/shares (`stat_icon` already maps those labels to a
+  heart, a speech bubble and an arrows glyph). `postedAt` prints as an
+  absolute time ("28 Aug · 2:04 PM"), not "2h ago": the card is a static image
+  that might be viewed days after it was drawn.
+- `POST` also accepts `contentImageBase64` / `contentImageUrl`: a screenshot of
+  the post exactly as it renders in the app (e.g. captured client side with
+  `html2canvas`). When present it **replaces** the drawn body outright -
+  `title`, `description`, `stats`, `handle`, `verified`, `postedAt` and
+  `squadName` are all ignored, because the screenshot already shows them, and
+  it reproduces highlighted dates/fees, emoji and photo grids that this
+  renderer cannot draw itself. The image is letterboxed into the space
+  between the brand row and the QR block - centred, corner matched to the
+  card, never cropped or stretched - so send whatever aspect ratio the
+  component actually is. Only `title` stays required, for the sanitizer's
+  benefit and because every card kind needs one.
+- A `POST` with no `coverBase64`/`coverUrl` draws no banner at all, unlike a
+  squad or event: most posts are just text, and a generated band would say
+  otherwise. A post with a photo gets one, same as the other two.
 - `ctaLabel` overrides "SCAN TO JOIN THE SQUAD" and friends. `actions` adds a
   muted row of affordances under the link; there is **no default**, because on a
   flat image "Add to calendar" is a caption for a control that is not there.
@@ -107,16 +128,17 @@ Notes:
 
 ### What the cards look like
 
-Three layouts, not one template drawn three times: they answer different
-questions, and a shared grid made all three read like a form.
+Four designs, not one template drawn four times: they answer different
+questions, and a shared grid made them all read like a form.
 
 | Kind    | Hero                                        | Detail panel                                | Call to action           |
 | ------- | ------------------------------------------- | ------------------------------------------- | ------------------------ |
 | `SQUAD` | Banner, badge, name, tagline, sport/privacy | Members, founded, captain, member faces     | "Scan to join the squad" |
 | `USER`  | Face, name, tick, handle, level, sports     | XP, squads and whatever else was sent       | "Scan to view profile"   |
 | `EVENT` | Banner, host, squad                         | When / where / format, then going and spots | "Scan to join the event" |
+| `POST`  | Byline (face, name, tick, handle, time), post text - or a screenshot | Likes, comments, shares - whatever was sent | "Scan to join Playbook"  |
 
-Common to all three: a rounded card on a darker page with an accent outline,
+Common to all four: a rounded card on a darker page with an accent outline,
 the brand mark and kind pill on the top row, and a floor block holding the call
 to action, the QR plate and the link.
 
@@ -136,7 +158,10 @@ Squad and event cards have a banner across the top. Most squads never upload
 one, so when the payload has no `coverUrl` / `coverBase64` the renderer draws a
 stand in from the theme and the sport - a tinted wash, angled bands and a large
 submerged pictogram - rather than leaving an empty edge. Player cards have no
-banner at all: on a namecard the face is the hero.
+banner at all: on a namecard the face is the hero. Post cards sit in between -
+a supplied photo renders as a banner, but a text only post (most of them)
+gets no generated stand in either: unlike a squad, "no photo" is the normal
+case, not a gap to paper over.
 
 To use real photography instead, drop files into
 `image_processing_service/static/covers` or point `RENDER_DEFAULT_COVER_DIR` at
@@ -150,8 +175,9 @@ A file that will not open is logged and skipped, not fatal.
 
 ### Imagery
 
-Two ways in: inline `avatarBase64` / `coverBase64` (with or without a
-`data:image/png;base64,` prefix), or `avatarUrl` / `coverUrl`.
+Two ways in: inline `avatarBase64` / `coverBase64` / `contentImageBase64`
+(with or without a `data:image/png;base64,` prefix), or `avatarUrl` /
+`coverUrl` / `contentImageUrl`.
 
 Remote URLs are refused unless you opt in, because fetching arbitrary URLs
 would make this service an SSRF proxy. **playbook-be sends presigned MinIO/S3
@@ -165,7 +191,8 @@ RENDER_REMOTE_IMAGE_HOSTS='["minio", "localhost"]'   # your storage hosts
 Imagery that cannot be loaded - bad base64, an expired link, a host that is not
 allow listed, storage being down - costs the user their photo, not their card:
 the renderer logs a warning and falls back to generated initials or a plain
-gradient. Set `RENDER_STRICT_IMAGES=true` to make those requests fail instead,
+gradient (or, for a `POST` content image, to the drawn `title`/`description`
+body). Set `RENDER_STRICT_IMAGES=true` to make those requests fail instead,
 which is useful while debugging a storage change.
 
 ## Result
@@ -216,6 +243,13 @@ Same obfuscated token, so no new endpoint and no lookup: the short routes in
 `playbook-web/src/app/app.routes.ts` are pure redirects, and `server.ts` answers
 them with a 302 on the web. `ShareLinks` in playbook-be builds both forms -
 notifications and the sitemap keep using the long ones.
+
+`POST` is renderer-ready but not yet wired up on that side: there is no `/p/`
+short route in `playbook-web/src/app/app.routes.ts` and no `ShareLinks` helper
+for it in playbook-be yet, and `ShareCardServiceImpl` does not build a `POST`
+payload. Until that lands, send whatever share URL a caller already has as
+`shareUrl` - the renderer only prints and encodes it, it does not care what
+shape the link is.
 
 **Scanning a card opens the app, not the browser**, on a phone with Playbook
 installed: the links are Android App Links, verified against
@@ -406,8 +440,17 @@ copy, WhatsApp, Telegram, X, Facebook. Image renders the card, with a Post
   `Filesystem.writeFile` + `Share.share({ files })` on Android, so the card
   lands in Instagram or WhatsApp as an image rather than a link. Desktop
   browsers without file sharing fall back to a download.
-- Posts have no card design, so the tab only appears for profiles, squads and
-  events.
+- The renderer now has a `POST` design (see [Payload](#payload)), but
+  playbook-web has not been wired up to it yet: the Image tab still only
+  appears for profiles, squads and events, and there is no `POST` branch in
+  `ShareCardServiceImpl` on the backend to build the payload from a post
+  entity. Bringing the tab to posts is frontend + backend work, not a
+  renderer change. Two ways to feed it: send the structured fields
+  (`title`/`description`/`stats`/...) and let the renderer draw the body, or
+  capture a screenshot of the post component (`contentImageBase64`) and let
+  it stand in unedited - the latter is pixel faithful to whatever the post
+  actually looks like (highlighted dates, emoji, photos) but needs a client
+  side capture step (e.g. `html2canvas`) that does not exist yet either.
 - 503 shows "lots of cards are being made right now", 504 shows a retry: the
   saturation path is visible to the user rather than a spinner that never ends.
 

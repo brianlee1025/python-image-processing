@@ -12,7 +12,7 @@ from uuid import uuid4
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 from pydantic.alias_generators import to_camel
 
-CardKind = Literal["USER", "SQUAD", "EVENT"]
+CardKind = Literal["USER", "SQUAD", "EVENT", "POST"]
 CardLayout = Literal["POSTER", "CARD", "STORY"]
 ImageFormat = Literal["AUTO", "PNG", "JPEG", "WEBP"]
 RenderStatus = Literal["COMPLETED", "FAILED", "REJECTED"]
@@ -51,6 +51,8 @@ _UNCLIPPED_FIELDS = {
     "cover_base64",
     "memberAvatarsBase64",
     "member_avatars_base64",
+    "contentImageBase64",
+    "content_image_base64",
 }
 
 
@@ -158,6 +160,46 @@ class SquadCard(BaseCard):
     member_avatar_urls: list[str] = Field(default_factory=list, max_length=4)
 
 
+class PostCard(BaseCard):
+    """A feed post, shared to bring the reader back to the app.
+
+    `title` carries the author's display name and `description` the post's
+    own text - the same fields a `UserCard` uses for identity, because a post
+    card is a namecard with the words as the hero rather than the face.
+    """
+
+    kind: Literal["POST"] = "POST"
+
+    handle: str | None = None
+    verified: bool = False
+    level: int | None = None
+
+    # When the post was made. Printed as an absolute time, not "2h ago": the
+    # card is a static image and would read wrong within the hour otherwise.
+    posted_at: datetime | None = None
+
+    # "Posted in Bukit Jalil Ballers", when the post came from a squad.
+    squad_name: str | None = None
+
+    # A screenshot of the post exactly as it renders in the app (e.g. taken
+    # client side with html2canvas), used as the card's body in place of
+    # `title`/`description`/`stats` drawn from scratch. Faithful to whatever
+    # highlighted dates, emoji or photos the post actually has - things this
+    # renderer cannot reproduce - at the cost of the renderer no longer
+    # controlling how the body looks. `handle`/`verified`/`posted_at`/
+    # `squadName` are also skipped when this is set: a screenshot already
+    # shows the byline.
+    content_image_base64: str | None = None
+    content_image_url: str | None = None
+
+    @model_validator(mode="after")
+    def limit_content_image(self) -> "PostCard":
+        total = len(self.content_image_base64 or "") + len(self.avatar_base64 or "") + len(self.cover_base64 or "")
+        if total > MAX_INLINE_IMAGE_CHARS:
+            raise ValueError(f"Inline images exceed {MAX_INLINE_IMAGE_CHARS} base64 characters")
+        return self
+
+
 class EventCard(BaseCard):
     kind: Literal["EVENT"] = "EVENT"
 
@@ -176,7 +218,7 @@ class EventCard(BaseCard):
     audience_label: str | None = None
 
 
-CardPayload = Annotated[UserCard | SquadCard | EventCard, Field(discriminator="kind")]
+CardPayload = Annotated[UserCard | SquadCard | EventCard | PostCard, Field(discriminator="kind")]
 
 
 class RenderRequest(CamelModel):

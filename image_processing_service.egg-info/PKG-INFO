@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: image_processing_service
-Version: 0.0.0.dev2+gc8bec3979.d20260817
+Version: 0.0.0.dev3+ga129a7610.d20260828
 Summary: imag eprocessign service using python
 Author: brianlee
 License: Copyright (c) 2026, brianlee, All Rights Reserved
@@ -44,12 +44,22 @@ Local development uses the Redpanda that already runs in playbook-be's stack;
 this service does not start a broker of its own.
 
 ```bash
+# Setup, once per checkout (or `make install` if you have uv)
+py -3.12 -m venv .venv && .venv\Scripts\activate && pip install -e . && cp .env.example .env
+```
+
+```bash
 # One card, no broker needed
 image_processing_service sample-card --kind EVENT --layout STORY --out card.png
-
-# The Kafka worker: cp .env.example .env once, then no flags
-image_processing_service render-worker
 ```
+
+```bash
+# The Kafka worker, no flags: .env has the broker and the storage allow list
+python main.py
+```
+
+`main.py` is the development shortcut; `image_processing_service render-worker`
+is the same thing through the installed console script.
 
 ## CLI
 

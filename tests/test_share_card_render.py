@@ -29,7 +29,7 @@ def decoded(result) -> Image.Image:
     return Image.open(BytesIO(base64.b64decode(result.image_base64)))
 
 
-@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT"])
+@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT", "POST"])
 def test_every_card_kind_renders(kind):
     result = render_now(sample_request(kind=kind))
 

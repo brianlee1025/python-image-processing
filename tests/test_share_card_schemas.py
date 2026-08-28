@@ -3,7 +3,15 @@
 import pytest
 from pydantic import ValidationError
 
-from image_processing_service.schemas.cards import MAX_TEXT_LENGTH, EventCard, RenderRequest, RenderResult, UserCard
+from image_processing_service.schemas.cards import (
+    MAX_INLINE_IMAGE_CHARS,
+    MAX_TEXT_LENGTH,
+    EventCard,
+    PostCard,
+    RenderRequest,
+    RenderResult,
+    UserCard,
+)
 
 
 def test_parses_backend_camel_case():
@@ -32,6 +40,27 @@ def test_kind_selects_the_payload_model():
     assert isinstance(request.payload, EventCard)
     assert request.payload.spots_left == 3
     assert request.payload.starts_at is not None
+
+
+def test_post_kind_selects_the_payload_model():
+    request = RenderRequest.model_validate(
+        {
+            "kind": "POST",
+            "payload": {
+                "title": "Aisyah Rahman",
+                "handle": "@aisyahplays",
+                "postedAt": "2026-08-20T19:30:00+08:00",
+                "squadName": "Bukit Jalil Ballers",
+                "contentImageBase64": "iVBORw0KGgo=",
+            },
+        }
+    )
+
+    assert isinstance(request.payload, PostCard)
+    assert request.payload.handle == "@aisyahplays"
+    assert request.payload.squad_name == "Bukit Jalil Ballers"
+    assert request.payload.posted_at is not None
+    assert request.payload.content_image_base64 == "iVBORw0KGgo="
 
 
 def test_lower_case_enums_are_accepted():
@@ -67,6 +96,23 @@ def test_long_text_is_clipped_not_rejected():
 def test_missing_title_is_rejected():
     with pytest.raises(ValidationError):
         RenderRequest.model_validate({"kind": "USER", "payload": {}})
+
+
+def test_content_image_base64_is_not_clipped_like_other_long_strings():
+    """It is image data, not prose - clipping it would just corrupt it."""
+    long_base64 = "A" * 50_000
+    request = RenderRequest.model_validate(
+        {"kind": "POST", "payload": {"title": "Aisyah", "contentImageBase64": long_base64}}
+    )
+
+    assert request.payload.content_image_base64 == long_base64
+
+
+def test_a_posts_content_image_counts_toward_the_inline_image_cap():
+    PostCard(title="Aisyah", content_image_base64="x" * 1000)  # under the cap: fine
+
+    with pytest.raises(ValidationError, match="Inline images exceed"):
+        PostCard(title="Aisyah", content_image_base64="x" * (MAX_INLINE_IMAGE_CHARS + 1))
 
 
 def test_result_serialises_as_camel_case():

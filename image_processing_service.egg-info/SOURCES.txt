@@ -1,9 +1,14 @@
+.dockerignore
+.env.example
+.gitignore
 LICENSE
 README.md
 alembic.ini
 compose.yaml
 dockerfile.celery
+dockerfile.worker
 dockerfile.www
+main.py
 makefile
 pyproject.toml
 uv.lock
@@ -30,11 +35,13 @@ docs/dev/documentation.md
 docs/dev/makefile.md
 docs/dev/pypi.md
 docs/dev/settings.md
+docs/dev/share_cards.md
 docs/dev/testing.md
 image_processing_service/__init__.py
 image_processing_service/_version.py
 image_processing_service/celery.py
 image_processing_service/cli.py
+image_processing_service/http.py
 image_processing_service/py.typed
 image_processing_service/samples.py
 image_processing_service/settings.py
@@ -67,8 +74,10 @@ image_processing_service/models/__pycache__/base.cpython-314.pyc
 image_processing_service/render/__init__.py
 image_processing_service/render/canvas.py
 image_processing_service/render/cards.py
+image_processing_service/render/covers.py
 image_processing_service/render/encode.py
 image_processing_service/render/fonts.py
+image_processing_service/render/icons.py
 image_processing_service/render/media.py
 image_processing_service/render/palette.py
 image_processing_service/schemas/__init__.py
@@ -87,6 +96,7 @@ tests/test_offsets.py
 tests/test_pool.py
 tests/test_settings.py
 tests/test_share_card_api.py
+tests/test_share_card_design.py
 tests/test_share_card_render.py
 tests/test_share_card_schemas.py
 tests/test_www.py

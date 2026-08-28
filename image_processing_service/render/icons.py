@@ -78,6 +78,13 @@ STAT_ICONS: tuple[tuple[str, str], ...] = (
     ("captain", "shield"),
     ("leader", "shield"),
     ("host", "shield"),
+    ("like", "heart"),
+    ("love", "heart"),
+    ("comment", "message"),
+    ("reply", "message"),
+    ("repost", "arrows"),
+    ("share", "share"),
+    ("view", "user"),
 )
 
 
@@ -553,6 +560,47 @@ def _check(draw: ImageDraw.ImageDraw, box: Box, color: RGB | RGBA, stroke: int) 
     )
 
 
+def _heart(draw: ImageDraw.ImageDraw, box: Box, color: RGB | RGBA, stroke: int) -> None:
+    x0, y0, x1, y1 = box
+    width, height = x1 - x0, y1 - y0
+    lobe = width * 0.28
+    left_center = (x0 + lobe, y0 + height * 0.32)
+    right_center = (x1 - lobe, y0 + height * 0.32)
+    draw.ellipse(
+        (left_center[0] - lobe, left_center[1] - lobe, left_center[0] + lobe, left_center[1] + lobe), fill=color
+    )
+    draw.ellipse(
+        (right_center[0] - lobe, right_center[1] - lobe, right_center[0] + lobe, right_center[1] + lobe), fill=color
+    )
+    draw.polygon(
+        [
+            (x0 + width * 0.04, y0 + height * 0.34),
+            (x1 - width * 0.04, y0 + height * 0.34),
+            (x0 + width * 0.50, y1 - height * 0.02),
+        ],
+        fill=color,
+    )
+
+
+def _message(draw: ImageDraw.ImageDraw, box: Box, color: RGB | RGBA, stroke: int) -> None:
+    x0, y0, x1, y1 = box
+    width, height = x1 - x0, y1 - y0
+    draw.rounded_rectangle(
+        (x0, y0, x1, y0 + height * 0.72),
+        radius=max(round(width * 0.16), 2),
+        outline=color,
+        width=stroke,
+    )
+    draw.polygon(
+        [
+            (x0 + width * 0.22, y0 + height * 0.72 - stroke * 0.4),
+            (x0 + width * 0.22, y1),
+            (x0 + width * 0.44, y0 + height * 0.72 - stroke * 0.4),
+        ],
+        fill=color,
+    )
+
+
 def _share(draw: ImageDraw.ImageDraw, box: Box, color: RGB | RGBA, stroke: int) -> None:
     x0, y0, x1, y1 = box
     width, height = x1 - x0, y1 - y0
@@ -630,9 +678,11 @@ _ICONS: dict[str, Callable[[ImageDraw.ImageDraw, Box, RGB | RGBA, int], None]] =
     "dumbbell": _dumbbell,
     "flag": _flag,
     "globe": _globe,
+    "heart": _heart,
     "jersey": _jersey,
     "link": _link,
     "lock": _lock,
+    "message": _message,
     "pin": _pin,
     "racket": _racket,
     "run": _run,

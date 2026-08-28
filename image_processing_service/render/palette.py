@@ -96,12 +96,24 @@ THEMES: dict[str, Theme] = {
         text=(233, 250, 255),
         muted=(140, 180, 196),
     ),
+    # Post cards. Violet, distinct from the other three hues so a shared post
+    # never reads as a mis-tagged squad or event card.
+    "dusk": Theme(
+        name="dusk",
+        background_top=(30, 16, 54),
+        background_bottom=(14, 8, 26),
+        accent=(167, 139, 250),
+        surface=(255, 255, 255),
+        text=(245, 240, 255),
+        muted=(176, 162, 208),
+    ),
 }
 
 DEFAULT_THEME_BY_KIND: dict[str, str] = {
     "USER": "midnight",
     "SQUAD": "turf",
     "EVENT": "sunset",
+    "POST": "dusk",
 }
 
 

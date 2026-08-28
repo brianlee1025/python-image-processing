@@ -19,9 +19,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from logging import getLogger
 
-from PIL import Image, ImageChops, ImageDraw
+from PIL import Image, ImageChops, ImageDraw, ImageOps
 
-from ..schemas.cards import BaseCard, EventCard, RenderRequest, SquadCard, Stat, UserCard
+from ..schemas.cards import BaseCard, EventCard, PostCard, RenderRequest, SquadCard, Stat, UserCard
 from ..settings import settings
 from .canvas import (
     PAGE_TINT,
@@ -56,12 +56,13 @@ from .palette import Theme, darken, readable_text, resolve_theme, tier_color, wi
 
 logger = getLogger(__name__)
 
-KIND_LABELS = {"USER": "PLAYER CARD", "SQUAD": "SQUAD", "EVENT": "EVENT"}
+KIND_LABELS = {"USER": "PLAYER CARD", "SQUAD": "SQUAD", "EVENT": "EVENT", "POST": "POST"}
 
 CTA_LABELS = {
     "USER": "SCAN TO VIEW PROFILE",
     "SQUAD": "SCAN TO JOIN THE SQUAD",
     "EVENT": "SCAN TO JOIN THE EVENT",
+    "POST": "SCAN TO JOIN PLAYBOOK",
 }
 
 # Icons for the optional affordance row under the link. Matched on a keyword so
@@ -80,6 +81,11 @@ ACTION_ICONS: tuple[tuple[str, str], ...] = (
 
 # Cards without a banner get generated art instead of an empty top edge.
 COVER_KINDS = {"SQUAD", "EVENT"}
+
+# Cards that draw a real photo when the payload has one, but - unlike
+# `COVER_KINDS` - get no generated stand-in when it does not. Most posts are
+# just words; inventing a banner for a text post would say otherwise.
+PHOTO_KINDS = COVER_KINDS | {"POST"}
 
 
 @dataclass(frozen=True)
@@ -186,6 +192,9 @@ def render_card(request: RenderRequest) -> Image.Image:
         _compose_squad(image, draw, request, theme, metrics, avatar, cover)
     elif request.kind == "EVENT":
         _compose_event(image, draw, request, theme, metrics, avatar, cover)
+    elif request.kind == "POST":
+        content_image = _content_image(request)
+        _compose_post(image, draw, request, theme, metrics, avatar, cover, content_image)
     else:
         _compose_user(image, draw, request, theme, metrics, avatar)
 
@@ -477,6 +486,167 @@ def _compose_event(
         draw.text((x, cursor), "for ", font=host_face.font, fill=theme.muted)
         x += text_width(draw, "for ", host_face)
         draw.text((x, cursor), squad_name.upper(), font=host_bold.font, fill=theme.accent)
+
+
+def _compose_post(
+    image: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    request: RenderRequest,
+    theme: Theme,
+    metrics: Metrics,
+    avatar: Image.Image | None,
+    cover: Image.Image | None,
+    content_image: Image.Image | None,
+) -> None:
+    """The shared post: what somebody said, not who said it. The author is a
+    byline - a small ringed avatar, a name, a timestamp - and the post's own
+    words get the space a title would get on every other card.
+
+    When the payload carries a `contentImageBase64` - a screenshot of the
+    post exactly as it renders in the app - that image becomes the body
+    instead of text drawn from scratch, since this renderer cannot reproduce
+    highlighted dates, emoji or a photo grid. See `_draw_post_screenshot`.
+    """
+    card = request.payload
+    assert isinstance(card, PostCard)
+    width, _ = image.size
+    margin = metrics.margin
+    content_width = width - margin * 2
+
+    _draw_brand_row(draw, image, request, theme, metrics)
+    floor = _draw_bottom_block(image, draw, request, theme, metrics)
+
+    if content_image is not None:
+        top = metrics.frame + margin + round(metrics.label * 2.6)
+        _draw_post_screenshot(
+            draw, image, content_image, (margin, top, width - margin, floor - metrics.gap), theme, metrics
+        )
+        return
+
+    if cover is not None:
+        band_bottom = _draw_cover(image, cover, theme, metrics)
+        top = band_bottom + metrics.gap // 2
+    else:
+        top = metrics.frame + margin + round(metrics.label * 2.6)
+
+    stats = list(card.stats)[:4]
+    strip_bottom = floor - metrics.gap
+    strip_top = (
+        _draw_stat_strip(draw, request, theme, metrics, (margin, strip_bottom, width - margin), stats=stats)
+        if stats
+        else strip_bottom
+    )
+    limit = strip_top - metrics.gap
+
+    avatar_size = round(metrics.avatar * 0.58)
+    ring = tier_color(card.level) if card.level is not None else theme.accent
+    paste_avatar(image, _avatar_image(avatar, card.title, avatar_size, theme), (margin, top), ring=ring)
+
+    column_x = margin + avatar_size + metrics.gap
+    column_width = width - column_x - margin
+
+    name_face = get_font(metrics.subtitle, "bold")
+    tick = round(metrics.body * 1.05) if card.verified else 0
+    name_width = column_width - (tick + metrics.gap // 2 if tick else 0)
+    name = ellipsize(draw, card.title, name_face, name_width)
+    name_top = top + round((avatar_size - name_face.line_height) / 2) - round(name_face.line_height * 0.6)
+    draw.text((column_x, name_top), name, font=name_face.font, fill=theme.text)
+    if tick:
+        name_end = column_x + text_width(draw, name, name_face) + metrics.gap // 2
+        badge(
+            draw,
+            (
+                name_end,
+                name_top + (name_face.line_height - tick) / 2,
+                name_end + tick,
+                name_top + (name_face.line_height + tick) / 2,
+            ),
+            theme.accent,
+            readable_text(theme.accent),
+        )
+
+    meta_face = get_font(metrics.micro, "regular")
+    meta_bits = [bit for bit in (card.handle, format_post_date(card.posted_at) if card.posted_at else None) if bit]
+    meta_top = name_top + round(name_face.line_height * 1.08)
+    if meta_bits:
+        draw.text(
+            (column_x, meta_top),
+            ellipsize(draw, " · ".join(meta_bits), meta_face, column_width),
+            font=meta_face.font,
+            fill=theme.muted,
+        )
+
+    body_top = max(top + avatar_size, meta_top + meta_face.line_height) + metrics.gap * 1.3
+    if card.squad_name:
+        squad_face = get_font(metrics.micro, "bold")
+        squad_top = meta_top + round(meta_face.line_height * 1.15)
+        icon_row(
+            draw,
+            (column_x, squad_top),
+            [("users", card.squad_name)],
+            squad_face,
+            theme.accent,
+            icon_size=round(metrics.icon * 0.8),
+            gap=metrics.gap // 3,
+            spacing=0,
+            icon_fill=theme.accent,
+        )
+        body_top = max(body_top, squad_top + round(squad_face.line_height * 1.3))
+
+    if not card.description:
+        return
+
+    sizes = (
+        round(metrics.subtitle * 1.35),
+        round(metrics.subtitle * 1.1),
+        metrics.subtitle,
+        metrics.body + 6,
+        metrics.body,
+    )
+    largest = get_font(sizes[0], "regular")
+    max_lines = _line_budget(limit - body_top, largest.line_height * 1.32, 10)
+    body_face, body_lines = fit_text(
+        draw, card.description, sizes=sizes, weight="regular", max_width=content_width, max_lines=max_lines
+    )
+
+    # A short caption top anchored in a tall gap reads as unfinished, so any
+    # slack between the byline and the stat strip is split evenly around the
+    # text block instead - short or long, the words sit where the eye expects
+    # the card's one real sentence to be.
+    block_height = round(body_face.line_height * 1.32 * len(body_lines))
+    offset = max(round((limit - body_top - block_height) / 2), 0)
+    draw_lines(draw, (margin, round(body_top + offset)), body_lines, body_face, theme.text, spacing=1.32)
+
+
+def _draw_post_screenshot(
+    draw: ImageDraw.ImageDraw,
+    image: Image.Image,
+    content: Image.Image,
+    box: tuple[int, int, int, int],
+    theme: Theme,
+    metrics: Metrics,
+) -> None:
+    """Paste a screenshot of the post - captured as it actually renders in
+    the app - as the card's body. Letterboxed to fit the space between the
+    brand row and the floor block rather than cropped or stretched, since a
+    cropped caption or a squashed photo would misrepresent the post."""
+    x0, y0, x1, y1 = box
+    available_width, available_height = round(x1 - x0), round(y1 - y0)
+    if available_width <= 0 or available_height <= 0 or content.width <= 0 or content.height <= 0:
+        return
+
+    fitted = ImageOps.contain(content.convert("RGB"), (available_width, available_height), Image.Resampling.LANCZOS)
+    radius = min(metrics.panel_radius, fitted.width // 2, fitted.height // 2)
+    paste_x = round(x0 + (available_width - fitted.width) / 2)
+    paste_y = round(y0 + (available_height - fitted.height) / 2)
+
+    image.paste(fitted, (paste_x, paste_y), rounded_mask(fitted.size, radius))
+    draw.rounded_rectangle(
+        (paste_x, paste_y, paste_x + fitted.width, paste_y + fitted.height),
+        radius=radius,
+        outline=theme.panel_border,
+        width=2,
+    )
 
 
 # --------------------------------------------------------------------------
@@ -1217,6 +1387,13 @@ def _meta_entries(card: BaseCard) -> list[tuple[str | None, str]]:
             entries.append(("pin", venue))
         if card.host_name:
             entries.append(("shield", f"Hosted by {card.host_name}"))
+    elif isinstance(card, PostCard):
+        if card.handle:
+            entries.append((None, card.handle))
+        if card.posted_at is not None:
+            entries.append(("calendar", format_post_date(card.posted_at)))
+        if card.squad_name:
+            entries.append(("users", card.squad_name))
     else:
         if isinstance(card, SquadCard) and card.member_count is not None:
             entries.append(("users", f"{card.member_count} members"))
@@ -1334,18 +1511,29 @@ def _source(
 
 
 def _cover(request: RenderRequest, theme: Theme) -> Image.Image | None:
-    """The banner, or generated art when the squad or event has none."""
+    """The banner: a real photo for any kind that carries one, generated art
+    when a squad or event has none, nothing at all for a post with no photo."""
     card = request.payload
-    if request.kind not in COVER_KINDS:
+    if request.kind not in PHOTO_KINDS:
         return None
 
     cover = _source(card.cover_base64, card.cover_url, "cover", request.request_id)
     if cover is not None:
         return cover
+    if request.kind not in COVER_KINDS:
+        return None
 
     width, height = request.size
     sport = card.sport if isinstance(card, (SquadCard, EventCard)) else None
     return default_cover(request.kind, sport, (width, max(round(height * 0.30), 1)), theme)
+
+
+def _content_image(request: RenderRequest) -> Image.Image | None:
+    """A caller supplied screenshot of the post, when there is one."""
+    card = request.payload
+    if not isinstance(card, PostCard):
+        return None
+    return _source(card.content_image_base64, card.content_image_url, "content image", request.request_id)
 
 
 def _member_faces(card: SquadCard, size: int, request_id: str) -> list[Image.Image]:
@@ -1398,3 +1586,12 @@ def format_event_time(start: datetime, end: datetime | None) -> str:
 
 def _clock(value: datetime) -> str:
     return value.strftime("%I:%M %p").lstrip("0")
+
+
+def format_post_date(value: datetime) -> str:
+    """`28 Aug · 2:04 PM`, in whatever offset the backend sent.
+
+    Absolute rather than "2h ago": the card is a static image that might be
+    viewed days after it was drawn, and a relative label would go stale.
+    """
+    return f"{value.strftime('%d %b').lstrip('0')} · {_clock(value)}"
