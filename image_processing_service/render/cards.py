@@ -53,7 +53,7 @@ from .covers import default_cover
 from .fonts import Typeface, get_font
 from .icons import badge, draw_icon, sport_icon, stat_icon
 from .media import SourceImageError, load_source
-from .palette import Theme, darken, readable_text, resolve_theme, tier_color, with_alpha
+from .palette import RGB, Theme, darken, readable_text, resolve_theme, tier_color, with_alpha
 
 logger = getLogger(__name__)
 
@@ -79,6 +79,38 @@ ACTION_ICONS: tuple[tuple[str, str], ...] = (
     ("copy", "link"),
     ("link", "link"),
 )
+
+# How long a post may be before the card stops trying to show all of it,
+# measured in multiples of its own width. Letterboxing a long post - a
+# thousand words in a phone-width column - fits it by shrinking it until the
+# text is too small to read and most of the card is empty margin. Past this,
+# the card shows the top of the post at a readable size and lets the rest run
+# off the bottom instead.
+#
+# A capture is always a phone-width column, so its height in widths is how
+# long the post actually is, and it says so independently of the device pixel
+# ratio the screenshot was taken at. A single photo with a byline and a
+# caption lands near 1.5; a wall of text runs past 4.
+#
+# This used to be a fraction of the available width instead, which measured
+# the layout rather than the post: POSTER's slot for the screenshot is
+# landscape (944x741) while every capture is portrait, so contain-fitting any
+# of them came out under the fraction and *every* POSTER card was truncated -
+# a single-photo post included, with the photo cut off halfway down. STORY's
+# slot is portrait, so the same post came out whole there, which is what made
+# the two layouts disagree about the same post.
+MAX_SCREENSHOT_ASPECT = 2.0
+
+# How much of the visible screenshot the fade at the cut covers. Enough to
+# read as "this continues", not so much that it eats into the content.
+SCREENSHOT_FADE_FRACTION = 0.18
+
+# The QR code's size in the compact footer, against `metrics.qr`. The code is
+# read by a phone held up to a screen, not by a scanner across a room, so the
+# limit is how few pixels a module can be and still resolve - not how big the
+# plate looks. At this scale a share link is ~4.5px per module on a 1080 card,
+# comfortably above that, and the ~90px it gives back goes to the post.
+COMPACT_QR_SCALE = 0.62
 
 # Cards without a banner get generated art instead of an empty top edge.
 COVER_KINDS = {"SQUAD", "EVENT"}
@@ -514,11 +546,14 @@ def _compose_post(
     margin = metrics.margin
     content_width = width - margin * 2
 
-    _draw_brand_row(draw, image, request, theme, metrics)
-    floor = _draw_bottom_block(image, draw, request, theme, metrics)
+    brand_bottom = _draw_brand_row(draw, image, request, theme, metrics)
+    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=content_image is not None)
 
     if content_image is not None:
-        top = metrics.frame + margin + round(metrics.label * 2.6)
+        # The screenshot is the post, so it gets the card: it starts directly
+        # under the brand row rather than at the fixed drop the drawn body
+        # uses, and the footer below it is the compact row.
+        top = brand_bottom + metrics.gap
         _draw_post_screenshot(
             draw, image, content_image, (margin, top, width - margin, floor - metrics.gap), theme, metrics
         )
@@ -628,26 +663,72 @@ def _draw_post_screenshot(
     metrics: Metrics,
 ) -> None:
     """Paste a screenshot of the post - captured as it actually renders in
-    the app - as the card's body. Letterboxed to fit the space between the
-    brand row and the floor block rather than cropped or stretched, since a
-    cropped caption or a squashed photo would misrepresent the post."""
+    the app - as the card's body, in the space between the brand row and the
+    floor block.
+
+    Normally letterboxed, never stretched: a squashed photo would
+    misrepresent the post, and a cropped one is not the post at all. A long
+    post is the exception. Shown whole it has to shrink until it fits the
+    height, and since it is already a phone-width column that leaves a strip
+    of unreadable text down the middle of an otherwise empty card - the post
+    is technically all there and none of it can be read. Past
+    `MAX_SCREENSHOT_ASPECT` the card stops trying: it fills the width at a
+    legible size, keeps the top, and fades the cut so the card says the post
+    continues rather than pretending it ended.
+
+    Which of the two applies is a question about the post, not about the
+    layout it is going onto - so a post that is shown whole as a story is
+    shown whole as a poster too, just smaller.
+    """
     x0, y0, x1, y1 = box
     available_width, available_height = round(x1 - x0), round(y1 - y0)
     if available_width <= 0 or available_height <= 0 or content.width <= 0 or content.height <= 0:
         return
 
-    fitted = ImageOps.contain(content.convert("RGB"), (available_width, available_height), Image.Resampling.LANCZOS)
+    source = content.convert("RGB")
+    truncated = source.height > source.width * MAX_SCREENSHOT_ASPECT
+    fitted = ImageOps.contain(source, (available_width, available_height), Image.Resampling.LANCZOS)
+    if truncated:
+        scaled_height = max(1, round(source.height * available_width / source.width))
+        fitted = source.resize((available_width, scaled_height), Image.Resampling.LANCZOS).crop(
+            (0, 0, available_width, available_height)
+        )
+
     radius = min(metrics.panel_radius, fitted.width // 2, fitted.height // 2)
     paste_x = round(x0 + (available_width - fitted.width) / 2)
     paste_y = round(y0 + (available_height - fitted.height) / 2)
 
-    image.paste(fitted, (paste_x, paste_y), rounded_mask(fitted.size, radius))
+    mask = rounded_mask(fitted.size, radius)
+    if truncated:
+        mask = _fade_bottom(mask, round(fitted.height * SCREENSHOT_FADE_FRACTION))
+
+    image.paste(fitted, (paste_x, paste_y), mask)
+    # The frame still closes under the fade. An open-bottomed panel reads as a
+    # rendering fault; a closed one with the content dissolving inside it
+    # reads as a deliberate edge.
     draw.rounded_rectangle(
         (paste_x, paste_y, paste_x + fitted.width, paste_y + fitted.height),
         radius=radius,
         outline=theme.panel_border,
         width=2,
     )
+
+
+def _fade_bottom(mask: Image.Image, depth: int) -> Image.Image:
+    """Taper the last `depth` rows of a paste mask to nothing, so whatever the
+    screenshot is pasted onto shows through at the cut."""
+    width, height = mask.size
+    depth = min(depth, height)
+    if depth <= 0:
+        return mask
+
+    # linear_gradient runs black at the top to white at the bottom; inverted,
+    # it is opaque where the content continues and clear at the cut.
+    ramp = ImageOps.invert(Image.linear_gradient("L").resize((width, depth), Image.Resampling.BILINEAR))
+    faded = mask.copy()
+    top = height - depth
+    faded.paste(ImageChops.multiply(faded.crop((0, top, width, height)), ramp), (0, top))
+    return faded
 
 
 # --------------------------------------------------------------------------
@@ -815,8 +896,9 @@ def _draw_brand_row(
     request: RenderRequest,
     theme: Theme,
     metrics: Metrics,
-) -> None:
-    """Brand mark on the left, card kind on the right."""
+) -> int:
+    """Brand mark on the left, card kind on the right. Returns the y it ends
+    at, so content below can start from the row rather than from a guess."""
     width = image.size[0]
     margin = metrics.margin
     top = metrics.frame + metrics.margin // 2
@@ -834,9 +916,10 @@ def _draw_brand_row(
     label_face = get_font(metrics.micro, "bold")
     label = KIND_LABELS.get(request.kind, request.kind)
     label_width = round(tracked_width(draw, label, label_face, metrics.tracking)) + metrics.gap * 2
-    chip(
+    chip_top = top - metrics.gap // 3
+    _, chip_height = chip(
         draw,
-        (width - margin - label_width, top - metrics.gap // 3),
+        (width - margin - label_width, chip_top),
         label,
         label_face,
         fill=with_alpha(theme.accent, 245),
@@ -844,6 +927,8 @@ def _draw_brand_row(
         padding=(metrics.gap, metrics.gap // 2),
         tracking=metrics.tracking,
     )
+
+    return max(top + brand_face.line_height, chip_top + chip_height)
 
 
 def _draw_cover(
@@ -874,9 +959,19 @@ def _draw_bottom_block(
     request: RenderRequest,
     theme: Theme,
     metrics: Metrics,
+    *,
+    compact: bool = False,
 ) -> int:
     """Call to action, QR plate, link and affordance row, anchored to the floor
-    of the card. Returns the y where the block starts."""
+    of the card. Returns the y where the block starts.
+
+    `compact` lays the same pieces out as one row - QR plate on the left, call
+    to action over the link beside it - instead of the centred stack, and
+    shrinks the code to `COMPACT_QR_SCALE`. It is for the card whose body is
+    worth more than its footer: the post screenshot, which is the post itself
+    and wants every pixel the layout can give it. The stack costs roughly
+    twice the height for the same three pieces of information.
+    """
     card = request.payload
     width, height = image.size
     center = width // 2
@@ -909,8 +1004,14 @@ def _draw_bottom_block(
             spacing=metrics.gap,
         )
 
-    url = _display_url(card.share_url) or settings.render_brand_url
     url_bottom = bottom - action_height - (metrics.gap // 2 if action_entries else 0)
+
+    # The affordance row is the caller's, so it is drawn either way; only the
+    # three pieces above it change shape.
+    if compact:
+        return _draw_compact_bottom_block(image, draw, request, theme, metrics, url_bottom, label_face, url_face)
+
+    url = _display_url(card.share_url) or settings.render_brand_url
     draw_text(
         draw,
         (center - text_width(draw, url, url_face) / 2, url_bottom - url_face.line_height),
@@ -953,6 +1054,70 @@ def _draw_bottom_block(
         )
 
     return top
+
+
+def _draw_compact_bottom_block(
+    image: Image.Image,
+    draw: ImageDraw.ImageDraw,
+    request: RenderRequest,
+    theme: Theme,
+    metrics: Metrics,
+    bottom: int,
+    label_face: Typeface,
+    url_face: Typeface,
+) -> int:
+    """The footer as a single row: QR plate, then the call to action over the
+    link. Centred as one group, so it still reads as the card's foot rather
+    than as something left in a corner. Returns the y where the row starts."""
+    card = request.payload
+    center = image.size[0] // 2
+    gap = metrics.gap
+
+    cta = (card.cta_label or CTA_LABELS.get(request.kind, "SCAN ME")).upper()
+    url = _display_url(card.share_url) or settings.render_brand_url
+    note = card.footer_note
+    note_face = get_font(metrics.micro, "regular")
+
+    lines: list[tuple[str, Typeface, RGB, float]] = [
+        (cta, label_face, theme.accent, metrics.tracking),
+        (url, url_face, theme.text, 0.0),
+    ]
+    if note:
+        lines.append((note, note_face, theme.muted, 0.0))
+
+    text_height = sum(face.line_height for _, face, _, _ in lines) + gap // 3 * (len(lines) - 1)
+    text_width_px = max(tracked_width(draw, text, face, tracking) for text, face, _, tracking in lines)
+
+    # Without a link there is no code to draw, and the row is just the words.
+    qr_size = round(metrics.qr * COMPACT_QR_SCALE) if card.share_url else 0
+    padding = gap // 2
+    plate = qr_size + padding * 2 if qr_size else 0
+    row_height = max(plate, text_height)
+    row_top = bottom - row_height
+
+    left = round(center - (plate + (gap if plate else 0) + text_width_px) / 2)
+    if qr_size:
+        qr_panel(
+            image,
+            draw,
+            card.share_url,
+            left + plate // 2,
+            row_top + round((row_height - qr_size) / 2),
+            qr_size,
+            padding=padding,
+            radius=metrics.panel_radius // 2,
+        )
+
+    cursor = row_top + (row_height - text_height) / 2
+    text_left = left + plate + (gap if plate else 0)
+    for text, face, color, tracking in lines:
+        if tracking:
+            tracked_text(draw, (text_left, cursor), text, face, color, tracking=tracking)
+        else:
+            draw_text(draw, (text_left, cursor), text, face, color)
+        cursor += face.line_height + gap // 3
+
+    return row_top
 
 
 def _draw_squad_panel(

@@ -32,9 +32,9 @@ class KafkaSettings(BaseSettings):
     kafka_max_poll_interval_ms: int = Field(default=300_000, ge=1000)
     kafka_commit_interval_seconds: float = Field(default=1.0, ge=0, le=60)
 
-    # Results carry a base64 image, so the broker and topic must allow messages
-    # larger than the 1 MiB default if you raise `render_max_bytes`.
-    kafka_max_message_bytes: int = Field(default=1_048_576, ge=100_000, le=100_000_000)
+    # Requests may carry a 10.8M-character client screenshot and results carry
+    # a base64 image. The clients and both topics must use the same ceiling.
+    kafka_max_message_bytes: int = Field(default=12_000_000, ge=100_000, le=100_000_000)
     kafka_compression_type: str = "lz4"
 
     kafka_security_protocol: str = "PLAINTEXT"
@@ -75,6 +75,8 @@ class KafkaSettings(BaseSettings):
             "enable.partition.eof": False,
             "session.timeout.ms": self.kafka_session_timeout_ms,
             "max.poll.interval.ms": self.kafka_max_poll_interval_ms,
+            "max.partition.fetch.bytes": self.kafka_max_message_bytes,
+            "fetch.max.bytes": self.kafka_max_message_bytes,
         }
         config.update(self._security_config())
         return config

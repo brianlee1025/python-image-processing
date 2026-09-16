@@ -111,8 +111,16 @@ Notes:
   it reproduces highlighted dates/fees, emoji and photo grids that this
   renderer cannot draw itself. The image is letterboxed into the space
   between the brand row and the QR block - centred, corner matched to the
-  card, never cropped or stretched - so send whatever aspect ratio the
-  component actually is. Only `title` stays required, for the sanitizer's
+  card, never stretched - so send whatever aspect ratio the component
+  actually is. A post more than `MAX_SCREENSHOT_ASPECT` times as tall as it
+  is wide is the one exception: letterboxing a wall of text shrinks it past
+  reading, so the card keeps the top at a legible width and fades the cut.
+  That threshold is about the post, not the layout, so POSTER and STORY
+  always agree on whether a given post is shown whole. A screenshot also
+  changes the footer: the call to action, QR and link go in one row rather
+  than the centred stack, and the code shrinks by `COMPACT_QR_SCALE`, which
+  buys the screenshot about 30% more height (POSTER 54% -> 71% of the card).
+  Only `title` stays required, for the sanitizer's
   benefit and because every card kind needs one.
 - A `POST` with no `coverBase64`/`coverUrl` draws no banner at all, unlike a
   squad or event: most posts are just text, and a generated band would say
@@ -286,16 +294,20 @@ that eventually times out.
 
 ## Size budget
 
-Kafka's default message limit is 1 MiB and base64 inflates the image by a
-third, so the encoder targets `RENDER_MAX_BYTES` (600 kB by default). It tries
-the requested format first, then WEBP, then JPEG at falling quality, then
-scales the image down - the first result that fits wins. `format: "AUTO"`
-starts from `RENDER_DEFAULT_FORMAT` (PNG), which keeps text crisp and usually
-fits.
+Kafka's default message limit is 1 MiB, but a POST request can contain up to
+10.8 million base64 characters for its client-captured screenshot. Both image
+topics and both services therefore default `KAFKA_MAX_MESSAGE_BYTES` to 12 MB,
+leaving room for the surrounding JSON and record overhead.
 
-If you raise `RENDER_MAX_BYTES`, also raise `message.max.bytes` on the topic,
-`KAFKA_MAX_MESSAGE_BYTES` here, and `max.request.size` /
-`fetch.max.bytes` on the backend.
+Rendered results are kept much smaller: base64 inflates an image by a third,
+so the encoder targets `RENDER_MAX_BYTES` (600 kB by default). It tries the
+requested format first, then WEBP, then JPEG at falling quality, then scales
+the image down. The first result that fits wins. `format: "AUTO"` starts from
+`RENDER_DEFAULT_FORMAT` (PNG), which keeps text crisp and usually fits.
+
+If either inline-image or rendered-output cap is raised, raise the topic
+`max.message.bytes`, backend `max.request.size` / consumer fetch limits, and
+this service's `KAFKA_MAX_MESSAGE_BYTES` together.
 
 ## HTTP API
 
@@ -322,6 +334,7 @@ curl -s localhost/share-cards/sample/USER?layout=STORY --output card.png
 | `KAFKA_RESULT_TOPIC`            | `image-render-results`  |                                          |
 | `KAFKA_GROUP_ID`                | `image-render-workers`  | Same group across worker replicas        |
 | `KAFKA_AUTO_OFFSET_RESET`       | `latest`                | Old requests are stale, skip them        |
+| `KAFKA_MAX_MESSAGE_BYTES`       | `12000000`              | Request fetch/result produce ceiling     |
 | `KAFKA_SECURITY_PROTOCOL`       | `PLAINTEXT`             | `SSL` for the mTLS Redpanda deployments  |
 | `KAFKA_SSL_CA_LOCATION`         | unset                   | mTLS CA bundle                           |
 | `KAFKA_SSL_CERTIFICATE_LOCATION`| unset                   | Client certificate                       |

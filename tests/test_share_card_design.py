@@ -283,14 +283,151 @@ def test_a_content_image_replaces_the_drawn_body():
 
 @pytest.mark.parametrize("shape", [(900, 400), (400, 1200), (300, 300)])
 def test_a_content_image_of_any_shape_stays_inside_the_card(shape):
-    """Letterboxed, not cropped or stretched: a caption cut in half or a
-    squashed photo would misrepresent the post."""
+    """However a screenshot is fitted - letterboxed whole, or truncated when
+    it is too long to letterbox - it never bleeds past the card frame."""
     metrics = METRICS_BY_LAYOUT["POSTER"]
     image = render_card(request_for("POST", title="Admin Lee", contentImageBase64=photo(shape, (250, 250, 255))))
 
     for x in (metrics.frame + 4, image.width - metrics.frame - 4):
         for y in (metrics.frame + 4, image.height - metrics.frame - 4):
             assert image.getpixel((x, y)) != (250, 250, 255)
+
+
+# Nothing the card draws is this colour, so a pixel matching it is the pasted
+# screenshot and not the wordmark, the QR block or a panel.
+SCREENSHOT_COLOR = (250, 90, 40)
+
+
+def _content_rows(image, color=SCREENSHOT_COLOR, tolerance=12):
+    """Rows of the card holding the screenshot, and how wide it is on each."""
+    rows = {}
+    for y in range(image.height):
+        xs = [
+            x for x in range(image.width) if all(abs(a - b) <= tolerance for a, b in zip(image.getpixel((x, y)), color))
+        ]
+        if xs:
+            rows[y] = (min(xs), max(xs))
+    return rows
+
+
+def test_a_post_too_long_to_letterbox_is_truncated_to_a_readable_width():
+    """A long post is a phone-width column thousands of pixels tall. Fitting
+    all of it means shrinking it until the words cannot be read and the card
+    is mostly margin, so the card keeps the top at a legible size instead."""
+    short = render_card(request_for("POST", title="Admin Lee", contentImageBase64=photo((760, 900), SCREENSHOT_COLOR)))
+    long = render_card(request_for("POST", title="Admin Lee", contentImageBase64=photo((760, 5200), SCREENSHOT_COLOR)))
+
+    short_width = max(right - left for left, right in _content_rows(short).values())
+    long_width = max(right - left for left, right in _content_rows(long).values())
+
+    # The long post is the one that would have been squeezed; it must end up
+    # at least as wide as the short one, not a narrow strip beside it.
+    assert long_width >= short_width
+    # And it should be using most of the card, rather than a sliver of it.
+    assert long_width > long.width * 0.7
+
+
+def test_a_truncated_post_fades_out_instead_of_stopping_dead():
+    """The cut has to read as "this continues". A hard edge reads as a
+    rendering fault, or worse, as the whole post."""
+    image = render_card(request_for("POST", title="Admin Lee", contentImageBase64=photo((760, 5200), SCREENSHOT_COLOR)))
+    rows = _content_rows(image)
+    assert rows, "the screenshot should be on the card"
+
+    top, bottom = min(rows), max(rows)
+    middle = (top + bottom) // 2
+    x = (rows[middle][0] + rows[middle][1]) // 2
+
+    # Opaque through the body, gone by the cut.
+    assert image.getpixel((x, top + 30)) == SCREENSHOT_COLOR
+    assert image.getpixel((x, middle)) == SCREENSHOT_COLOR
+    assert image.getpixel((x, bottom - 2)) != SCREENSHOT_COLOR
+
+
+def test_a_post_that_fits_is_still_shown_whole():
+    """Truncation is for the case that cannot be letterboxed. An ordinary
+    screenshot keeps every pixel it had."""
+    source_height, source_width = 900, 760
+    image = render_card(
+        request_for(
+            "POST", title="Admin Lee", contentImageBase64=photo((source_width, source_height), SCREENSHOT_COLOR)
+        )
+    )
+    rows = _content_rows(image)
+    top, bottom = min(rows), max(rows)
+    left, right = rows[(top + bottom) // 2]
+
+    # Same aspect ratio as the source means nothing was cropped away.
+    assert (bottom - top) / (right - left) == pytest.approx(source_height / source_width, abs=0.05)
+
+
+@pytest.mark.parametrize("layout", ["POSTER", "STORY"])
+def test_a_single_photo_post_is_shown_whole_in_every_layout(layout):
+    """The shape of the card must not change what the reader gets back.
+
+    A post that is one photo, a byline and a caption is a phone-width column
+    about half again as tall as it is wide - short enough to letterbox into
+    either layout, so both show all of it. POSTER used to cut it off halfway
+    down: its slot for the screenshot is landscape while every capture is
+    portrait, and the guard measured the shortfall against the slot's width,
+    so it read that permanent mismatch as "too long to letterbox"."""
+    source_width, source_height = 716, 1104
+    request = RenderRequest.model_validate(
+        {
+            "kind": "POST",
+            "layout": layout,
+            "payload": {
+                "title": "Admin Lee",
+                "contentImageBase64": photo((source_width, source_height), SCREENSHOT_COLOR),
+            },
+        }
+    )
+
+    rows = _content_rows(render_card(request))
+    top, bottom = min(rows), max(rows)
+    left, right = rows[(top + bottom) // 2]
+
+    assert (bottom - top) / (right - left) == pytest.approx(source_height / source_width, abs=0.05)
+
+
+SHARE_URL = "https://playbookapp.org/p/p8lj622"
+
+
+def _qr_plate_width(image: Image.Image) -> int:
+    """Widest unbroken run of pure white below the middle of the card, which
+    is the QR plate - nothing else the renderer draws down there is a solid
+    white block, and a glyph's run is a few pixels rather than a hundred."""
+    widest = 0
+    for y in range(image.height // 2, image.height):
+        run = 0
+        for x in range(image.width):
+            if image.getpixel((x, y)) == (255, 255, 255):
+                run += 1
+                widest = max(widest, run)
+            else:
+                run = 0
+    return widest
+
+
+def test_a_screenshot_post_gives_the_body_the_room_and_shrinks_the_qr():
+    """On a screenshot post the body *is* the post, so it gets the card and
+    the footer gets out of its way: the QR, call to action and link go in one
+    row instead of a centred stack, and the code comes down with them. A post
+    drawn from text has no such claim and keeps the full-size stack."""
+    screenshot = render_card(
+        request_for(
+            "POST",
+            title="Admin Lee",
+            shareUrl=SHARE_URL,
+            contentImageBase64=photo((716, 1104), SCREENSHOT_COLOR),
+        )
+    )
+    drawn = render_card(request_for("POST", title="Admin Lee", shareUrl=SHARE_URL, description="Great session today!"))
+
+    assert _qr_plate_width(screenshot) < _qr_plate_width(drawn)
+
+    rows = _content_rows(screenshot)
+    assert (max(rows) - min(rows)) > screenshot.height * 0.65
 
 
 def test_an_unusable_content_image_still_renders_a_card():

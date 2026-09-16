@@ -116,6 +116,17 @@ def config():
     )
 
 
+def test_kafka_clients_share_the_large_image_message_ceiling():
+    assert KafkaSettings().kafka_max_message_bytes == 12_000_000
+
+    config = KafkaSettings(kafka_max_message_bytes=12_345_678)
+
+    consumer = config.consumer_config()
+    assert consumer["max.partition.fetch.bytes"] == 12_345_678
+    assert consumer["fetch.max.bytes"] == 12_345_678
+    assert config.producer_config()["message.max.bytes"] == 12_345_678
+
+
 def render_request(request_id="req-1"):
     return json.dumps(
         {
