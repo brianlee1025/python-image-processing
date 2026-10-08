@@ -151,7 +151,8 @@ def test_generated_covers_are_cached_per_theme_and_sport():
 @pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT", "POST"])
 def test_the_qr_code_is_drawn_on_white_whatever_the_theme(kind):
     """A dark QR on a dark card is the one thing a phone will not read."""
-    assert white_pixels(render_card(sample_request(kind=kind))) > 20_000
+    # Identity cards now use a compact footer plate rather than a giant QR.
+    assert white_pixels(render_card(sample_request(kind=kind))) > 7_000
 
 
 def test_a_card_without_a_share_url_draws_no_qr_plate():
@@ -443,7 +444,19 @@ def test_the_level_badge_is_coloured_by_tier():
     assert common.tobytes() != legendary.tobytes()
     # The tier colour reaches the card - the pill and the avatar ring both use it.
     assert _has_color(legendary, TIER_COLORS["legendary"])
-    assert not _has_color(legendary, TIER_COLORS["common"])
+    # Decorative court lines can share individual antialiased palette pixels;
+    # compare the avatar region, where the level ring actually lives.
+    metrics = METRICS_BY_LAYOUT["POSTER"]
+    top = metrics.margin + round(metrics.label * 3.4)
+    avatar = legendary.crop(
+        (
+            metrics.margin - 8,
+            top - 8,
+            metrics.margin + round(metrics.avatar * 0.9) + 8,
+            top + round(metrics.avatar * 0.9) + 8,
+        )
+    )
+    assert not _has_color(avatar, TIER_COLORS["common"])
 
 
 def test_a_player_without_a_level_still_renders():

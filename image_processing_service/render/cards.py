@@ -216,6 +216,9 @@ def render_card(request: RenderRequest) -> Image.Image:
     image = new_canvas(request.size, theme, inset=metrics.frame, radius=metrics.card_radius)
     draw = ImageDraw.Draw(image, "RGBA")
 
+    if request.kind in {"USER", "EVENT", "SQUAD"}:
+        _draw_identity_backdrop(draw, image.size, theme, metrics)
+
     avatar = _source(card.avatar_base64, card.avatar_url, "avatar", request.request_id)
     cover = _cover(request, theme)
 
@@ -245,6 +248,27 @@ def resolve_card_theme(request: RenderRequest) -> Theme:
 # --------------------------------------------------------------------------
 
 
+def _draw_identity_backdrop(draw: ImageDraw.ImageDraw, size: tuple[int, int], theme: Theme, metrics: Metrics) -> None:
+    """Quiet court lines and an accent rail give identity cards a shared rhythm."""
+    width, height = size
+    right = width - metrics.margin
+    top = metrics.margin * 2
+    radius = round(width * 0.32)
+    for offset in (0, metrics.gap * 2):
+        draw.arc(
+            (right - radius + offset, top, right + radius + offset, top + radius * 2),
+            90,
+            270,
+            fill=with_alpha(theme.accent, 36),
+            width=2,
+        )
+    draw.line(
+        (metrics.margin, round(height * 0.64), width - metrics.margin, round(height * 0.64)),
+        fill=with_alpha(theme.accent, 18),
+        width=1,
+    )
+
+
 def _compose_squad(
     image: Image.Image,
     draw: ImageDraw.ImageDraw,
@@ -263,7 +287,7 @@ def _compose_squad(
     band_bottom = _draw_cover(image, cover, theme, metrics)
     _draw_brand_row(draw, image, request, theme, metrics)
 
-    floor = _draw_bottom_block(image, draw, request, theme, metrics)
+    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=True)
     panel_top = _draw_squad_panel(image, draw, request, theme, metrics, floor - metrics.gap)
     limit = panel_top - metrics.gap
 
@@ -283,7 +307,7 @@ def _compose_squad(
 
     title_face, title_lines = fit_text(
         draw,
-        card.title.upper(),
+        card.title,
         sizes=metrics.title_sizes,
         weight="bold",
         max_width=content_width,
@@ -306,7 +330,11 @@ def _compose_squad(
     cursor += metrics.gap // 2
 
     cursor = _draw_chip_row(draw, (margin, cursor), chips, theme, metrics, content_width, limit=limit)
-    _draw_meta_row(draw, (margin, cursor), meta, theme, metrics, content_width, limit=limit)
+    cursor = _draw_meta_row(draw, (margin, cursor), meta, theme, metrics, content_width, limit=limit)
+    if card.description:
+        _draw_identity_summary(
+            draw, card.description, margin, cursor + metrics.gap, content_width, limit, theme, metrics
+        )
 
 
 def _compose_user(
@@ -327,7 +355,7 @@ def _compose_user(
 
     _draw_brand_row(draw, image, request, theme, metrics)
 
-    floor = _draw_bottom_block(image, draw, request, theme, metrics)
+    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=True)
 
     # The strip is measured now and drawn last. A namecard carries less than a
     # poster - three chips and a one line bio - so bottom anchoring it left a
@@ -338,14 +366,14 @@ def _compose_user(
     strip_top = strip_bottom - (_stat_strip_height(metrics, stacked=True) if stats else 0)
     limit = strip_top - metrics.gap
 
-    avatar_size = round(metrics.avatar * 1.05)
+    avatar_size = round(metrics.avatar * 0.90)
     avatar_top = margin + round(metrics.label * 3.4)
     # The ring carries the tier the way the avatar frame does in the app, so a
     # card and a profile read as the same person at the same rank.
     ring = tier_color(card.level) if card.level is not None else theme.accent
     paste_avatar(image, _avatar_image(avatar, card.title, avatar_size, theme), (margin, avatar_top), ring=ring)
 
-    column_x = margin + avatar_size + metrics.gap * 2
+    column_x = margin + avatar_size + metrics.gap
     column_width = width - column_x - margin
     cursor = avatar_top
 
@@ -465,7 +493,7 @@ def _compose_event(
     band_bottom = _draw_cover(image, cover, theme, metrics)
     _draw_brand_row(draw, image, request, theme, metrics)
 
-    floor = _draw_bottom_block(image, draw, request, theme, metrics)
+    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=True)
     strip_top = _draw_stat_strip(
         draw,
         request,
@@ -519,6 +547,24 @@ def _compose_event(
         draw_text(draw, (x, cursor), "for ", host_face, theme.muted)
         x += text_width(draw, "for ", host_face)
         draw_text(draw, (x, cursor), squad_name.upper(), host_bold, theme.accent)
+        cursor += host_face.line_height
+
+    if card.description:
+        summary_top = max(cursor, avatar_top + avatar_size) + metrics.gap
+        _draw_identity_summary(draw, card.description, margin, summary_top, width - margin * 2, limit, theme, metrics)
+
+
+def _draw_identity_summary(draw, text, left, top, width, limit, theme, metrics):
+    face, lines = fit_text(
+        draw,
+        text,
+        sizes=(metrics.body,),
+        weight="regular",
+        max_width=width,
+        max_lines=_line_budget(limit - top, metrics.body * 1.5, 3),
+    )
+    if lines and top + face.line_height <= limit:
+        draw_lines(draw, (left, top), lines, face, theme.muted, spacing=1.3)
 
 
 def _compose_post(
