@@ -617,3 +617,25 @@ def test_post_dates_are_printed_as_an_absolute_time_not_a_relative_one():
     assert posted_at is not None
 
     assert format_post_date(posted_at) == "20 Aug · 7:05 PM"
+
+
+@pytest.mark.parametrize("kind", ["USER", "SQUAD", "EVENT", "POST"])
+@pytest.mark.parametrize("layout", ["POSTER", "STORY", "CARD"])
+def test_long_share_urls_keep_the_qr_plate_inside_the_card(monkeypatch, kind, layout):
+    from image_processing_service.render import cards
+
+    request = sample_request(kind, layout)
+    request.payload.share_url = "https://playbookapp.org/u/" + "long-profile-identifier" * 8
+    original = cards.qr_panel
+    plates = []
+
+    def checked_plate(image, draw, url, center, top, size, *, padding, radius):
+        plates.append(url)
+        margin = METRICS_BY_LAYOUT[layout].margin
+        assert center - size / 2 - padding >= margin - 1
+        assert center + size / 2 + padding <= image.width - margin + 1
+        return original(image, draw, url, center, top, size, padding=padding, radius=radius)
+
+    monkeypatch.setattr(cards, "qr_panel", checked_plate)
+    render_card(request)
+    assert plates == [request.payload.share_url]

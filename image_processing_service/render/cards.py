@@ -885,7 +885,8 @@ def _draw_scan_column(
     url_face = get_font(metrics.micro, "bold")
     padding = metrics.gap // 2
 
-    url = _display_url(card.share_url) or settings.render_brand_url
+    available = 2 * min(center_x - metrics.margin, image.width - metrics.margin - center_x)
+    url = ellipsize(draw, _display_url(card.share_url) or settings.render_brand_url, url_face, available)
     if not card.share_url:
         draw_text(
             draw,
@@ -1057,7 +1058,9 @@ def _draw_bottom_block(
     if compact:
         return _draw_compact_bottom_block(image, draw, request, theme, metrics, url_bottom, label_face, url_face)
 
-    url = _display_url(card.share_url) or settings.render_brand_url
+    url = ellipsize(
+        draw, _display_url(card.share_url) or settings.render_brand_url, url_face, width - metrics.margin * 2
+    )
     draw_text(
         draw,
         (center - text_width(draw, url, url_face) / 2, url_bottom - url_face.line_height),
@@ -1131,13 +1134,21 @@ def _draw_compact_bottom_block(
     if note:
         lines.append((note, note_face, theme.muted, 0.0))
 
-    text_height = sum(face.line_height for _, face, _, _ in lines) + gap // 3 * (len(lines) - 1)
-    text_width_px = max(tracked_width(draw, text, face, tracking) for text, face, _, tracking in lines)
-
     # Without a link there is no code to draw, and the row is just the words.
     qr_size = round(metrics.qr * COMPACT_QR_SCALE) if card.share_url else 0
     padding = gap // 2
     plate = qr_size + padding * 2 if qr_size else 0
+    available = image.width - metrics.margin * 2 - plate - (gap if plate else 0)
+    fitted = []
+    for text, face, color, tracking in lines:
+        while text and tracked_width(draw, text, face, tracking) > available:
+            text = text.rstrip("…")[:-1] + "…"
+            if text == "…":
+                break
+        fitted.append((text, face, color, tracking))
+    lines = fitted
+    text_height = sum(face.line_height for _, face, _, _ in lines) + gap // 3 * (len(lines) - 1)
+    text_width_px = max(tracked_width(draw, text, face, tracking) for text, face, _, tracking in lines)
     row_height = max(plate, text_height)
     row_top = bottom - row_height
 
