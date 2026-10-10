@@ -1,0 +1,65 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from dockerfile.worker
+#1 transferring dockerfile: 2.04kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#2 ...
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#2 DONE 1.9s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 529B done
+#4 DONE 0.0s
+
+#5 [1/8] FROM docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#5 resolve docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52 0.0s done
+#5 DONE 0.0s
+
+#6 [internal] load build context
+#6 transferring context: 151.90kB 0.0s done
+#6 DONE 0.0s
+
+#7 [2/8] RUN apt-get update     && apt-get install -y --no-install-recommends fonts-dejavu-core     && rm -rf /var/lib/apt/lists/*
+#7 CACHED
+
+#8 [3/8] RUN pip install --no-cache-dir "uv==0.12.5"     && groupadd --system --gid 10001 app     && useradd --system --uid 10001 --gid app --home-dir /nonexistent --shell /usr/sbin/nologin app
+#8 CACHED
+
+#9 [5/8] COPY pyproject.toml uv.lock README.md LICENSE /app/
+#9 CACHED
+
+#10 [4/8] WORKDIR /app
+#10 CACHED
+
+#11 [6/8] RUN uv sync --frozen --no-install-project --python /usr/local/bin/python
+#11 CACHED
+
+#12 [7/8] COPY image_processing_service /app/image_processing_service
+#12 DONE 0.1s
+
+#13 [8/8] RUN uv sync --frozen --python /usr/local/bin/python
+#13 0.628    Building image-processing-service @ file:///app
+#13 2.813       Built image-processing-service @ file:///app
+#13 2.817 Prepared 1 package in 2.19s
+#13 2.825 Installed 1 package in 7ms
+#13 3.352 Bytecode compiled 2348 files in 526ms
+#13 3.352  + image-processing-service==0.0.0.dev0 (from file:///app)
+#13 DONE 3.4s
+
+#14 exporting to image
+#14 exporting layers
+#14 exporting layers 0.2s done
+#14 exporting manifest sha256:9cae3f82cba6c6dc707a048fbca6b0f37bf850a0edfceb528636584ce6eace54 done
+#14 exporting config sha256:0493aab64a33b6586c4d78987bdbb30a31e99424b8bcb0a20fc398a634911e46 done
+#14 exporting attestation manifest sha256:303886a92940813426645334383f05234acc3511a05efefa455fcb48117c7b4d 0.0s done
+#14 exporting manifest list sha256:836e3d7cd686b658a6d5610eeeaa72cbfd4d7d37a0c7c35f335f03e325873a6c done
+#14 naming to docker.io/brian353/playbook-image-processing:card-bounds-20261008 done
+#14 unpacking to docker.io/brian353/playbook-image-processing:card-bounds-20261008
+#14 unpacking to docker.io/brian353/playbook-image-processing:card-bounds-20261008 0.2s done
+#14 DONE 0.5s

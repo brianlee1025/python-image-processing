@@ -1,0 +1,192 @@
+#0 building with "desktop-linux" instance using docker driver
+
+#1 [internal] load build definition from dockerfile.worker
+#1 transferring dockerfile: 2.04kB done
+#1 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#2 ...
+
+#3 [auth] library/python:pull token for registry-1.docker.io
+#3 DONE 0.0s
+
+#2 [internal] load metadata for docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#2 DONE 1.8s
+
+#4 [internal] load .dockerignore
+#4 transferring context: 529B done
+#4 DONE 0.0s
+
+#5 [1/8] FROM docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52
+#5 resolve docker.io/library/python:3.14.7-slim-bookworm@sha256:23c59390fc717bf09f9336908199a0ae75d9c4264bf296123f94ad772fea3b52 0.0s done
+#5 CACHED
+
+#6 [internal] load build context
+#6 transferring context: 992.00kB 0.2s done
+#6 DONE 0.2s
+
+#7 [2/8] RUN apt-get update     && apt-get install -y --no-install-recommends fonts-dejavu-core     && rm -rf /var/lib/apt/lists/*
+#7 0.418 Get:1 http://deb.debian.org/debian bookworm InRelease [151 kB]
+#7 0.434 Get:2 http://deb.debian.org/debian bookworm-updates InRelease [55.4 kB]
+#7 0.440 Get:3 http://deb.debian.org/debian-security bookworm-security InRelease [34.8 kB]
+#7 0.505 Get:4 http://deb.debian.org/debian bookworm/main amd64 Packages [8790 kB]
+#7 0.973 Get:5 http://deb.debian.org/debian bookworm-updates/main amd64 Packages [6924 B]
+#7 0.975 Get:6 http://deb.debian.org/debian-security bookworm-security/main amd64 Packages [349 kB]
+#7 1.548 Fetched 9388 kB in 1s (7920 kB/s)
+#7 1.548 Reading package lists...
+#7 1.860 Reading package lists...
+#7 2.165 Building dependency tree...
+#7 2.240 Reading state information...
+#7 2.334 The following NEW packages will be installed:
+#7 2.334   fonts-dejavu-core
+#7 2.362 0 upgraded, 1 newly installed, 0 to remove and 7 not upgraded.
+#7 2.362 Need to get 1068 kB of archives.
+#7 2.362 After this operation, 3031 kB of additional disk space will be used.
+#7 2.362 Get:1 http://deb.debian.org/debian bookworm/main amd64 fonts-dejavu-core all 2.37-6 [1068 kB]
+#7 2.558 debconf: delaying package configuration, since apt-utils is not installed
+#7 2.580 Fetched 1068 kB in 0s (12.8 MB/s)
+#7 2.605 Selecting previously unselected package fonts-dejavu-core.
+#7 2.605 (Reading database ... 
+(Reading database ... 5%
+(Reading database ... 10%
+(Reading database ... 15%
+(Reading database ... 20%
+(Reading database ... 25%
+(Reading database ... 30%
+(Reading database ... 35%
+(Reading database ... 40%
+(Reading database ... 45%
+(Reading database ... 50%
+(Reading database ... 55%
+(Reading database ... 60%
+(Reading database ... 65%
+(Reading database ... 70%
+(Reading database ... 75%
+(Reading database ... 80%
+(Reading database ... 85%
+(Reading database ... 90%
+(Reading database ... 95%
+(Reading database ... 100%
+(Reading database ... 6639 files and directories currently installed.)
+#7 2.638 Preparing to unpack .../fonts-dejavu-core_2.37-6_all.deb ...
+#7 2.640 Unpacking fonts-dejavu-core (2.37-6) ...
+#7 2.709 Setting up fonts-dejavu-core (2.37-6) ...
+#7 DONE 2.8s
+
+#8 [3/8] RUN pip install --no-cache-dir "uv==0.12.5"     && groupadd --system --gid 10001 app     && useradd --system --uid 10001 --gid app --home-dir /nonexistent --shell /usr/sbin/nologin app
+#8 2.592 Collecting uv==0.12.5
+#8 2.895   Downloading uv-0.12.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl.metadata (11 kB)
+#8 2.986 Downloading uv-0.12.5-py3-none-manylinux_2_17_x86_64.manylinux2014_x86_64.whl (23.7 MB)
+#8 4.602    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━ 23.7/23.7 MB 17.2 MB/s  0:00:01
+#8 4.689 Installing collected packages: uv
+#8 4.954 Successfully installed uv-0.12.5
+#8 4.954 WARNING: Running pip as the 'root' user can result in broken permissions and conflicting behaviour with the system package manager, possibly rendering your system unusable. It is recommended to use a virtual environment instead: https://pip.pypa.io/warnings/venv. Use the --root-user-action option if you know what you are doing and want to suppress this warning.
+#8 5.059 useradd warning: app's uid 10001 is greater than SYS_UID_MAX 999
+#8 DONE 5.2s
+
+#9 [4/8] WORKDIR /app
+#9 DONE 0.0s
+
+#10 [5/8] COPY pyproject.toml uv.lock README.md LICENSE /app/
+#10 DONE 0.0s
+
+#11 [6/8] RUN uv sync --frozen --no-install-project --python /usr/local/bin/python
+#11 0.388 Using CPython 3.14.7 interpreter at: /usr/local/bin/python
+#11 0.388 Creating virtual environment at: .venv
+#11 0.504 Downloading pillow (6.6MiB)
+#11 0.505 Downloading pydantic-core (2.0MiB)
+#11 0.509 Downloading pygments (1.2MiB)
+#11 0.510 Downloading uvloop (4.1MiB)
+#11 0.516 Downloading psycopg2-binary (4.1MiB)
+#11 0.516 Downloading confluent-kafka (4.6MiB)
+#11 0.518 Downloading sqlalchemy (3.1MiB)
+#11 0.519 Downloading asyncpg (3.3MiB)
+#11 1.418  Downloaded pygments
+#11 1.763  Downloaded pydantic-core
+#11 2.108  Downloaded sqlalchemy
+#11 2.147  Downloaded asyncpg
+#11 2.299  Downloaded uvloop
+#11 2.300  Downloaded psycopg2-binary
+#11 2.328  Downloaded confluent-kafka
+#11 2.459  Downloaded pillow
+#11 2.459 Prepared 53 packages in 2.06s
+#11 3.051 Installed 53 packages in 591ms
+#11 4.259 Bytecode compiled 2347 files in 1.22s
+#11 4.259  + aiosqlite==0.22.1
+#11 4.259  + alembic==1.18.5
+#11 4.259  + amqp==5.3.1
+#11 4.259  + annotated-doc==0.0.5
+#11 4.259  + annotated-types==0.8.0
+#11 4.259  + anyio==4.14.2
+#11 4.259  + asyncpg==0.31.0
+#11 4.259  + billiard==4.2.4
+#11 4.259  + celery==5.6.3
+#11 4.259  + click==8.4.2
+#11 4.259  + click-didyoumean==0.3.1
+#11 4.259  + click-plugins==1.1.1.2
+#11 4.259  + click-repl==0.3.0
+#11 4.259  + confluent-kafka==2.15.0
+#11 4.259  + fastapi==0.141.1
+#11 4.259  + greenlet==3.5.4
+#11 4.259  + h11==0.16.0
+#11 4.259  + httptools==0.8.0
+#11 4.260  + idna==3.18
+#11 4.260  + kombu==5.6.2
+#11 4.260  + mako==1.3.12
+#11 4.260  + markdown-it-py==4.2.0
+#11 4.260  + markupsafe==3.0.3
+#11 4.260  + mdurl==0.1.2
+#11 4.260  + packaging==26.2
+#11 4.260  + pillow==12.3.0
+#11 4.260  + prompt-toolkit==3.0.53
+#11 4.260  + psycopg2-binary==2.9.12
+#11 4.260  + pydantic==2.13.4
+#11 4.260  + pydantic-core==2.46.4
+#11 4.260  + pydantic-settings==2.14.2
+#11 4.260  + pygments==2.20.0
+#11 4.260  + python-dateutil==2.9.0.post0
+#11 4.260  + python-dotenv==1.2.2
+#11 4.260  + pyyaml==6.0.3
+#11 4.260  + qrcode==8.2
+#11 4.260  + redis==8.1.0
+#11 4.260  + rich==15.0.0
+#11 4.260  + shellingham==1.5.4
+#11 4.260  + six==1.17.0
+#11 4.260  + sqlalchemy==2.0.51
+#11 4.260  + starlette==1.3.1
+#11 4.260  + typer==0.27.0
+#11 4.260  + typing-extensions==4.16.0
+#11 4.260  + typing-inspection==0.4.2
+#11 4.260  + tzdata==2026.3
+#11 4.260  + tzlocal==5.4.4
+#11 4.260  + uvicorn==0.52.0
+#11 4.260  + uvloop==0.22.1
+#11 4.260  + vine==5.1.0
+#11 4.260  + watchfiles==1.2.0
+#11 4.261  + wcwidth==0.8.2
+#11 4.261  + websockets==17.0.1
+#11 DONE 4.7s
+
+#12 [7/8] COPY image_processing_service /app/image_processing_service
+#12 DONE 0.1s
+
+#13 [8/8] RUN uv sync --frozen --python /usr/local/bin/python
+#13 0.392    Building image-processing-service @ file:///app
+#13 2.845       Built image-processing-service @ file:///app
+#13 2.849 Prepared 1 package in 2.45s
+#13 2.856 Installed 1 package in 7ms
+#13 3.285 Bytecode compiled 2348 files in 429ms
+#13 3.285  + image-processing-service==0.0.0.dev0 (from file:///app)
+#13 DONE 3.5s
+
+#14 exporting to image
+#14 exporting layers
+#14 exporting layers 8.0s done
+#14 exporting manifest sha256:cca6123f9f755bc83fb9fdc2958ff522311feda3eef46b58033752bc9110c040 0.0s done
+#14 exporting config sha256:a0f9d3030d2975e1908011d3d69c25608951b12b254646aad730e5f6387eb021 done
+#14 exporting attestation manifest sha256:29ca1a69d3c1a7852f2a86b4fcf24419c477785c386302a4b7dc5e9ca5acb798 0.0s done
+#14 exporting manifest list sha256:82881e29303566ae913947b08cda00b41d8d68e4fec4c87ee19974b3814faf66 0.0s done
+#14 naming to docker.io/brian353/playbook-image-processing:cards-20261008 done
+#14 unpacking to docker.io/brian353/playbook-image-processing:cards-20261008
+#14 unpacking to docker.io/brian353/playbook-image-processing:cards-20261008 4.6s done
+#14 DONE 12.8s
