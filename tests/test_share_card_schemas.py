@@ -146,3 +146,10 @@ def test_failure_helper_sets_the_error_block():
 def test_stats_and_badges_are_capped():
     with pytest.raises(ValidationError):
         UserCard(title="Aisyah", badges=["a", "b", "c", "d", "e"])
+
+
+def test_a_posts_title_arrives_by_its_camel_case_name():
+    request = RenderRequest.model_validate(
+        {"kind": "POST", "payload": {"title": "Admin Lee", "postTitle": "Sunday doubles"}}
+    )
+    assert request.payload.post_title == "Sunday doubles"

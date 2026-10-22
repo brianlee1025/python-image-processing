@@ -181,6 +181,10 @@ class PostCard(BaseCard):
     # "Posted in Bukit Jalil Ballers", when the post came from a squad.
     squad_name: str | None = None
 
+    # The post's own headline, drawn above `description` (its caption). Posts
+    # from before titles have none, and then the caption leads.
+    post_title: str | None = None
+
     # A screenshot of the post exactly as it renders in the app (e.g. taken
     # client side with html2canvas), used as the card's body in place of
     # `title`/`description`/`stats` drawn from scratch. Faithful to whatever

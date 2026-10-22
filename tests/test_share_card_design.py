@@ -410,11 +410,11 @@ def _qr_plate_width(image: Image.Image) -> int:
     return widest
 
 
-def test_a_screenshot_post_gives_the_body_the_room_and_shrinks_the_qr():
-    """On a screenshot post the body *is* the post, so it gets the card and
-    the footer gets out of its way: the QR, call to action and link go in one
-    row instead of a centred stack, and the code comes down with them. A post
-    drawn from text has no such claim and keeps the full-size stack."""
+def test_a_post_gives_the_body_the_room_with_the_compact_footer():
+    """A post's body is the post, so the footer gets out of its way: the QR,
+    call to action and link go in one row instead of a centred stack, as on
+    every other card. A drawn post has the same claim to the room as a
+    screenshot one, so both use the same compact footer."""
     screenshot = render_card(
         request_for(
             "POST",
@@ -425,7 +425,7 @@ def test_a_screenshot_post_gives_the_body_the_room_and_shrinks_the_qr():
     )
     drawn = render_card(request_for("POST", title="Admin Lee", shareUrl=SHARE_URL, description="Great session today!"))
 
-    assert _qr_plate_width(screenshot) < _qr_plate_width(drawn)
+    assert _qr_plate_width(screenshot) == _qr_plate_width(drawn)
 
     rows = _content_rows(screenshot)
     assert (max(rows) - min(rows)) > screenshot.height * 0.65
@@ -639,3 +639,62 @@ def test_long_share_urls_keep_the_qr_plate_inside_the_card(monkeypatch, kind, la
     monkeypatch.setattr(cards, "qr_panel", checked_plate)
     render_card(request)
     assert plates == [request.payload.share_url]
+
+
+def first_line_height(image: Image.Image) -> int:
+    """Height of the first run of text rows in a post's body, a stand-in for
+    the size the words were set at. Text is the theme's near-white ink."""
+    metrics = METRICS_BY_LAYOUT["POSTER"]
+    top, bottom = round(image.height * 0.16), round(image.height * 0.66)
+    left, right = metrics.margin, image.width - metrics.margin
+    rows = [
+        y
+        for y in range(top, bottom)
+        if any(sum(image.getpixel((x, y))[:3]) > 600 for x in range(left, right, 3))
+    ]
+    if not rows:
+        return 0
+    run = 1
+    for previous, current in zip(rows, rows[1:]):
+        if current != previous + 1:
+            break
+        run += 1
+    return run
+
+
+def test_a_short_post_is_set_large_instead_of_floating_small():
+    """A one-liner used to sit at caption size in an empty band. The words
+    now step down from poster size only as far as they need to."""
+    short = render_card(request_for("POST", title="Admin Lee", description="Great game tonight!"))
+    long = render_card(
+        request_for("POST", title="Admin Lee", description="Play more, unlock more. " * 40)
+    )
+
+    assert first_line_height(short) > first_line_height(long) * 1.5
+
+
+def test_a_posts_title_leads_its_caption():
+    untitled = render_card(request_for("POST", title="Admin Lee", description="Three rounds of smashes."))
+    titled = render_card(
+        request_for(
+            "POST", title="Admin Lee", postTitle="Sunday doubles", description="Three rounds of smashes."
+        )
+    )
+
+    assert untitled.tobytes() != titled.tobytes()
+
+
+def test_a_post_with_only_a_title_still_renders_its_words():
+    image = render_card(request_for("POST", title="Admin Lee", postTitle="Smash drills, round two"))
+    assert first_line_height(image) > 0
+
+
+def test_a_titled_post_leads_the_link_preview_with_its_title():
+    plain = render_card(RenderRequest.model_validate(
+        {"kind": "POST", "layout": "CARD", "payload": {"title": "Admin Lee", "description": "Hi"}}
+    ))
+    titled = render_card(RenderRequest.model_validate(
+        {"kind": "POST", "layout": "CARD", "payload": {"title": "Admin Lee", "postTitle": "Sunday doubles"}}
+    ))
+
+    assert plain.tobytes() != titled.tobytes()

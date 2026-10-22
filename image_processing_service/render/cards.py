@@ -48,12 +48,13 @@ from .canvas import (
     text_width,
     tracked_text,
     tracked_width,
+    wrap_text,
 )
 from .covers import default_cover
 from .fonts import Typeface, get_font
 from .icons import badge, draw_icon, sport_icon, stat_icon
 from .media import SourceImageError, load_source
-from .palette import RGB, Theme, darken, readable_text, resolve_theme, tier_color, with_alpha
+from .palette import RGB, Theme, darken, mix, readable_text, resolve_theme, tier_color, with_alpha
 
 logger = getLogger(__name__)
 
@@ -444,24 +445,16 @@ def _compose_user(
 
     cursor = max(cursor, avatar_top + avatar_size) + metrics.gap
 
+    # The sports first, as part of who this is; then the bio takes whatever
+    # room is left above the stats, set as large as that room allows.
     chips = [(sport_icon(sport), sport) for sport in card.sports[:3] if sport]
-    reserved = _reserved_height(metrics, subtitle=False, chips=bool(chips), meta_rows=0)
-
-    if card.description:
-        body_face = get_font(metrics.body, "regular")
-        _, lines = fit_text(
-            draw,
-            card.description,
-            sizes=(metrics.body,),
-            weight="regular",
-            max_width=content_width,
-            max_lines=_line_budget(limit - cursor - reserved, body_face.line_height * 1.3, 3),
-        )
-        if lines and cursor + body_face.line_height <= limit:
-            cursor = draw_lines(draw, (margin, cursor), lines, body_face, theme.text, spacing=1.3) + metrics.gap // 2
-
     if chips:
         cursor = _draw_chip_row(draw, (margin, cursor), chips, theme, metrics, content_width, limit=limit, filled=False)
+
+    if card.description:
+        cursor = _draw_identity_summary(
+            draw, card.description, margin, cursor + metrics.gap, content_width, limit, theme, metrics
+        )
 
     if stats:
         slack = max(strip_top - (cursor + metrics.gap * 2), 0)
@@ -554,17 +547,75 @@ def _compose_event(
         _draw_identity_summary(draw, card.description, margin, summary_top, width - margin * 2, limit, theme, metrics)
 
 
-def _draw_identity_summary(draw, text, left, top, width, limit, theme, metrics):
-    face, lines = fit_text(
-        draw,
-        text,
-        sizes=(metrics.body,),
-        weight="regular",
-        max_width=width,
-        max_lines=_line_budget(limit - top, metrics.body * 1.5, 3),
-    )
-    if lines and top + face.line_height <= limit:
-        draw_lines(draw, (left, top), lines, face, theme.muted, spacing=1.3)
+# Line spacing for a card's description.
+SUMMARY_SPACING = 1.32
+
+
+def _draw_identity_summary(draw, text, left, top, width, limit, theme, metrics) -> int:
+    """A bio or description, set to fill the room it is given.
+
+    It used to be one small size capped at three lines, so a card with a short
+    description kept a hole between it and the panels underneath. Now it
+    steps down from a large size and takes the first that fits the room
+    whole; only text too long for the smallest is cut, on an ellipsis.
+
+    A short accent rule opens it, the same rule that separates a post's title
+    from its caption, so every card reads as a headline and then its words.
+    Returns the y just below what was drawn.
+    """
+    text = (text or "").strip()
+    if not text:
+        return top
+    rule_height = max(4, round(metrics.gap * 0.22))
+    rule_gap = round(metrics.gap * 0.75)
+    # Never run the words right up to the panel underneath: a full gap of air
+    # stays between them however long the text is.
+    limit -= metrics.gap
+
+    ladder = [round(metrics.subtitle * f) for f in (1.85, 1.65, 1.5, 1.3, 1.15, 1.0)] + [metrics.body]
+    sizes = sorted({size for size in ladder if size >= metrics.body}, reverse=True)
+    smallest = get_font(sizes[-1], "regular")
+
+    def whole_fit(available: float) -> tuple[Typeface, list[str]] | None:
+        for size in sizes:
+            candidate = get_font(size, "regular")
+            wrapped = wrap_text(draw, text, candidate, width)
+            if round(candidate.line_height * SUMMARY_SPACING * len(wrapped)) <= available:
+                return candidate, wrapped
+        return None
+
+    # The rule only when the words fit whole under it. In a tight card the
+    # room is worth more to the words than to the ornament.
+    fitted = whole_fit(limit - top - rule_height - rule_gap)
+    body_top = top + rule_height + rule_gap
+    if fitted is None:
+        body_top = top
+        available = limit - body_top
+        if smallest.line_height > available:
+            return top
+        fitted = whole_fit(available)
+    if fitted is not None:
+        face, lines = fitted
+    else:
+        face = smallest
+        room = int((limit - body_top) // (face.line_height * SUMMARY_SPACING))
+        # One clipped line wedged under the heading reads as packed, not as a
+        # description; the card is better without it.
+        if room < 2:
+            return top
+        lines = wrap_text(draw, text, face, width)[:room]
+        if lines:
+            lines[-1] = ellipsize(draw, lines[-1] + "…", face, width)
+
+    if body_top > top:
+        rule_width = round(metrics.gap * 2.4)
+        draw.rounded_rectangle(
+            (left, top, left + rule_width, top + rule_height), radius=rule_height // 2, fill=theme.accent
+        )
+    # Large type reads in the card's text colour; at reading size the muted
+    # colour keeps it behind the title it supports.
+    color = theme.text if face.size >= metrics.subtitle else mix(theme.muted, theme.text, 0.45)
+    return draw_lines(draw, (left, body_top), lines, face, color, spacing=SUMMARY_SPACING)
 
 
 def _compose_post(
@@ -593,7 +644,9 @@ def _compose_post(
     content_width = width - margin * 2
 
     brand_bottom = _draw_brand_row(draw, image, request, theme, metrics)
-    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=content_image is not None)
+    # The compact footer, as on every other card: the post's words are worth
+    # more of the card than a second, larger QR code.
+    floor = _draw_bottom_block(image, draw, request, theme, metrics, compact=True)
 
     if content_image is not None:
         # The screenshot is the post, so it gets the card: it starts directly
@@ -675,29 +728,118 @@ def _compose_post(
         )
         body_top = max(body_top, squad_top + round(squad_face.line_height * 1.3))
 
-    if not card.description:
+    _draw_post_words(
+        draw, card.post_title, card.description, theme, metrics, (margin, round(body_top), content_width, limit)
+    )
+
+
+# Line spacing for a post's headline and for its caption.
+POST_TITLE_SPACING = 1.12
+POST_CAPTION_SPACING = 1.32
+
+
+def _draw_post_words(
+    draw: ImageDraw.ImageDraw,
+    title: str | None,
+    caption: str | None,
+    theme: Theme,
+    metrics: Metrics,
+    box: tuple[int, int, int, float],
+) -> None:
+    """A post's title and caption, set as large as the space allows.
+
+    The type steps down a ladder of sizes, from poster-sized to reading size,
+    and stops at the first step where everything fits. So a one-line post
+    fills the card instead of sitting small in an empty band, and a long one
+    still comes down to a size that holds it. With a title, it is the bold
+    headline, a short accent rule closes it, and the caption follows as body
+    text a size or two smaller; without one, the caption is the headline.
+
+    Whatever slack is left is split above and below the block: a short post
+    top-anchored in a tall gap reads as unfinished.
+    """
+    left, top, width, limit = box
+    title = (title or "").strip()
+    caption = (caption or "").strip()
+    available = limit - top
+    if (not title and not caption) or available <= 0:
         return
 
-    sizes = (
-        round(metrics.subtitle * 1.35),
-        round(metrics.subtitle * 1.1),
-        metrics.subtitle,
-        metrics.body + 6,
-        metrics.body,
-    )
-    largest = get_font(sizes[0], "regular")
-    max_lines = _line_budget(limit - body_top, largest.line_height * 1.32, 10)
-    body_face, body_lines = fit_text(
-        draw, card.description, sizes=sizes, weight="regular", max_width=content_width, max_lines=max_lines
-    )
+    base = metrics.subtitle
+    if title:
+        # (title, caption) pairs: the caption always reads a step below.
+        ladder = [
+            (round(base * f), round(base * g))
+            for f, g in ((2.4, 1.3), (2.1, 1.2), (1.8, 1.1), (1.55, 1.0), (1.35, 0.92), (1.15, 0.86))
+        ]
+    else:
+        ladder = [(0, round(base * f)) for f in (2.6, 2.2, 1.85, 1.55, 1.35, 1.1, 0.86)]
 
-    # A short caption top anchored in a tall gap reads as unfinished, so any
-    # slack between the byline and the stat strip is split evenly around the
-    # text block instead - short or long, the words sit where the eye expects
-    # the card's one real sentence to be.
-    block_height = round(body_face.line_height * 1.32 * len(body_lines))
-    offset = max(round((limit - body_top - block_height) / 2), 0)
-    draw_lines(draw, (margin, round(body_top + offset)), body_lines, body_face, theme.text, spacing=1.32)
+    rule_height = max(4, round(metrics.gap * 0.22))
+    rule_gap = round(metrics.gap * 0.9)
+
+    def measure(title_size: int, caption_size: int) -> tuple[list[str], list[str], int]:
+        title_lines = wrap_text(draw, title, get_font(title_size, "bold"), width) if title else []
+        caption_lines = wrap_text(draw, caption, get_font(caption_size, "regular"), width) if caption else []
+        height = 0
+        if title_lines:
+            height += round(get_font(title_size, "bold").line_height * POST_TITLE_SPACING * len(title_lines))
+        if title_lines and caption_lines:
+            height += rule_gap * 2 + rule_height
+        if caption_lines:
+            height += round(get_font(caption_size, "regular").line_height * POST_CAPTION_SPACING * len(caption_lines))
+        return title_lines, caption_lines, height
+
+    chosen = None
+    for title_size, caption_size in ladder:
+        title_lines, caption_lines, height = measure(title_size, caption_size)
+        if height <= available and len(title_lines) <= 3:
+            chosen = (title_size, caption_size, title_lines, caption_lines, height)
+            break
+
+    if chosen is None:
+        # Too long even at reading size: keep the title, and as much of the
+        # caption as fits, ending on an ellipsis.
+        title_size, caption_size = ladder[-1]
+        title_lines, caption_lines, _ = measure(title_size, caption_size)
+        title_lines = title_lines[:3]
+        caption_face = get_font(caption_size, "regular")
+        used = 0
+        if title_lines:
+            used = round(get_font(title_size, "bold").line_height * POST_TITLE_SPACING * len(title_lines))
+            if caption_lines:
+                used += rule_gap * 2 + rule_height
+        step = caption_face.line_height * POST_CAPTION_SPACING
+        room = max(int((available - used) // step), 0)
+        if len(caption_lines) > room:
+            caption_lines = caption_lines[:room]
+            if caption_lines:
+                caption_lines[-1] = ellipsize(draw, caption_lines[-1] + "…", caption_face, width)
+        height = min(available, used + round(step * len(caption_lines)))
+        chosen = (title_size, caption_size, title_lines, caption_lines, height)
+
+    title_size, caption_size, title_lines, caption_lines, height = chosen
+    cursor = round(top + max((available - height) / 2, 0))
+    if title_lines:
+        cursor = draw_lines(
+            draw, (left, cursor), title_lines, get_font(title_size, "bold"), theme.text, spacing=POST_TITLE_SPACING
+        )
+        if caption_lines:
+            cursor += rule_gap
+            rule_width = round(metrics.gap * 2.4)
+            draw.rounded_rectangle(
+                (left, cursor, left + rule_width, cursor + rule_height), radius=rule_height // 2, fill=theme.accent
+            )
+            cursor += rule_height + rule_gap
+    if caption_lines:
+        draw_lines(
+            draw,
+            (left, cursor),
+            caption_lines,
+            get_font(caption_size, "regular"),
+            theme.text,
+            spacing=POST_CAPTION_SPACING,
+        )
 
 
 def _draw_post_screenshot(
@@ -825,9 +967,15 @@ def _compose_landscape(
     column_x = margin + avatar_size + metrics.gap
     column_width = column_right - column_x
 
+    # A titled post leads with what it is about; its author becomes the line
+    # under it. Everything else leads with its own name.
+    headline, subtitle = card.title, card.subtitle
+    if isinstance(card, PostCard) and card.post_title:
+        headline, subtitle = card.post_title, card.title
+
     title_face, title_lines = fit_text(
         draw,
-        card.title,
+        headline,
         sizes=metrics.title_sizes,
         weight="bold",
         max_width=column_width,
@@ -838,7 +986,7 @@ def _compose_landscape(
     subtitle_face = get_font(metrics.subtitle, "bold")
 
     block = title_face.line_height * len(title_lines)
-    if card.subtitle:
+    if subtitle:
         block += subtitle_face.line_height
     if meta:
         block += round(meta_face.line_height * 1.4)
@@ -852,8 +1000,10 @@ def _compose_landscape(
     )
 
     cursor = draw_lines(draw, (column_x, cursor), title_lines, title_face, theme.text, spacing=1.03)
-    if card.subtitle:
-        cursor = draw_lines(draw, (column_x, cursor), [card.subtitle], subtitle_face, theme.accent)
+    if subtitle:
+        cursor = draw_lines(
+            draw, (column_x, cursor), [ellipsize(draw, subtitle, subtitle_face, column_width)], subtitle_face, theme.accent
+        )
     if meta:
         icon_row(
             draw,
@@ -1368,9 +1518,15 @@ def _draw_event_details(
         return bottom
 
     face = get_font(metrics.body, "regular")
-    rows = max(len(first), len(second))
     row_step = round(face.line_height * 1.55)
-    height = row_step * rows + metrics.gap * 2 - (row_step - face.line_height)
+
+    # Measured per column, counting the venue's second line: sizing by the row
+    # count alone let a two-line venue push the last row onto the border.
+    def column_height(column: list[tuple[str, str]]) -> float:
+        extra = sum(min(len(value.split("\n")), 2) - 1 for _, value in column)
+        return row_step * len(column) - (row_step - face.line_height) + face.line_height * extra
+
+    height = round(max(column_height(first), column_height(second)) + metrics.gap * 2)
 
     box = (left, bottom - height, right, bottom)
     panel(draw, box, metrics.panel_radius, theme.panel, theme.panel_border)
